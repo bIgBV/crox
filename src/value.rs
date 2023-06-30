@@ -24,10 +24,9 @@ impl Values {
     }
 
     pub fn get(&self, idx: Offset) -> Option<Value> {
-        self.storage.get(idx.0).and_then(|val| {
+        self.storage.get(idx.0).map(|val| {
             dbg!(&val);
-            // todo: this is creating unnecessary copies?
-            Some(Value((*val).clone()))
+            Value(*val)
         })
     }
 }
