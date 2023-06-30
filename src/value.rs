@@ -1,6 +1,6 @@
 use sharded_slab::Slab;
 
-use crate::memory::Usize;
+use crate::memory::Offset;
 
 pub struct Values {
     storage: Slab<f64>,
@@ -15,15 +15,15 @@ impl Values {
         }
     }
 
-    pub fn add_constant(&self, value: Value) -> Result<Usize, ()> {
+    pub fn add_constant(&self, value: Value) -> Result<Offset, ()> {
         if let Some(offset) = self.storage.insert(value.0) {
-            Ok(Usize(offset))
+            Ok(Offset(offset))
         } else {
             Err(())
         }
     }
 
-    pub fn get(&self, idx: Usize) -> Option<Value> {
+    pub fn get(&self, idx: Offset) -> Option<Value> {
         self.storage.get(idx.0).and_then(|val| {
             dbg!(&val);
             // todo: this is creating unnecessary copies?

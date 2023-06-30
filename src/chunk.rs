@@ -3,7 +3,7 @@ use std::fmt::Display;
 use zerocopy::{AsBytes, FromBytes};
 
 use crate::{
-    memory::Usize,
+    memory::{Offset, OFFSET_SIZE},
     value::{Value, Values},
 };
 
@@ -63,7 +63,7 @@ impl Chunk {
         write!(f, " {}", op_name).expect("Formatting failed");
 
         let idx_offset = offset + 1;
-        if let Some(idx) = Usize::read_from(&self.code[idx_offset..]) {
+        if let Some(idx) = Offset::read_from(&self.code[idx_offset..idx_offset + OFFSET_SIZE]) {
             let val = self
                 .values
                 .get(idx)
@@ -73,7 +73,7 @@ impl Chunk {
             todo!("THE FUCK");
         }
 
-        offset + 1 + std::mem::size_of::<Usize>()
+        offset + 1 + OFFSET_SIZE
     }
 }
 
