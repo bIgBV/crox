@@ -4,6 +4,7 @@ use tracing_subscriber::FmtSubscriber;
 use crate::chunk::{Chunk, OpCode};
 
 mod chunk;
+mod line_store;
 mod memory;
 mod value;
 
@@ -18,9 +19,9 @@ fn main() {
     tracing::subscriber::set_global_default(subscriber).expect("setting default subscriber failed");
 
     let mut chunk = Chunk::new("test");
-    chunk.write(OpCode::Return);
+    chunk.write(OpCode::Return, 1);
     chunk
-        .write_constant(4.5)
+        .write_constant(4.5, 1)
         .expect("Error writing constant to bytestream");
     info!(%chunk);
 }

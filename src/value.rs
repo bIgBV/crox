@@ -1,4 +1,5 @@
 use sharded_slab::Slab;
+use thiserror::Error;
 
 use crate::memory::Offset;
 
@@ -15,12 +16,11 @@ impl Values {
         }
     }
 
-    pub fn add_constant(&self, value: Value) -> Result<Offset, ()> {
-        if let Some(offset) = self.storage.insert(value.0) {
-            Ok(Offset(offset))
-        } else {
-            Err(())
-        }
+    pub fn add_constant(&self, value: Value) -> Result<Offset, ValueError> {
+        self.storage
+            .insert(value.0)
+            .map(|val| Offset(val))
+            .ok_or(ValueError::OutOfMemory)
     }
 
     pub fn get(&self, idx: Offset) -> Option<Value> {
@@ -29,4 +29,10 @@ impl Values {
             Value(*val)
         })
     }
+}
+
+#[derive(Debug, Error)]
+pub enum ValueError {
+    #[error("Value storage is out of memory")]
+    OutOfMemory,
 }
