@@ -52,12 +52,12 @@ impl Chunk {
     }
 
     // TODO: add new method to line store to add a slice of bytes to a single line
-    pub fn write_bytes(&mut self, bytes: &[u8], line: usize) {
+    fn write_bytes(&mut self, bytes: &[u8], line: usize) {
         self.code.extend_from_slice(bytes);
+        self.lines.add_bytes(line, bytes.len());
     }
 
-    // TODO Chunk should have it's own error type
-    pub fn write_constant(&mut self, constant: f64, line: usize) -> Result<(), ValueError> {
+    pub fn write_constant(&mut self, constant: f64, line: usize) -> Result<(), ChunkError> {
         let offset = self.values.add_constant(Value(constant))?;
         self.write(OpCode::Constant, line);
         self.write_bytes(offset.as_bytes(), line);
@@ -77,6 +77,12 @@ impl Display for Chunk {
             write!(f, "Unable to format chunk: {}", self.name)
         }
     }
+}
+
+#[derive(thiserror::Error, Debug)]
+#[error("{0}")]
+pub enum ChunkError {
+    ConstantStore(#[from] ValueError),
 }
 
 /// Formats a given chunk

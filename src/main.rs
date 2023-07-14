@@ -1,3 +1,4 @@
+use anyhow::Result;
 use tracing::{info, Level};
 use tracing_subscriber::FmtSubscriber;
 
@@ -8,7 +9,7 @@ mod line_store;
 mod memory;
 mod value;
 
-fn main() {
+fn main() -> Result<()> {
     let subscriber = FmtSubscriber::builder()
         // all spans/events with a level higher than TRACE (e.g, debug, info, warn, etc.)
         // will be written to stdout.
@@ -20,8 +21,8 @@ fn main() {
 
     let mut chunk = Chunk::new("test");
     chunk.write(OpCode::Return, 1);
-    chunk
-        .write_constant(4.5, 1)
-        .expect("Error writing constant to bytestream");
+    chunk.write_constant(4.5, 1)?;
     info!(%chunk);
+
+    Ok(())
 }

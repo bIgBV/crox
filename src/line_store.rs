@@ -20,6 +20,17 @@ impl LineStore {
         }
     }
 
+    pub fn add_bytes(&mut self, line: usize, count: usize) {
+        if let Some(idx) = self.find_line(line) {
+            let mut span = &mut self.spans[idx];
+            span.count += count;
+        } else {
+            let span = Span { line, count };
+
+            self.spans.push(span);
+        }
+    }
+
     /// Returns the associated line for the given byte offset if available
     pub fn get_line(&self, byte_offset: Offset) -> Option<usize> {
         let mut sum: usize = 0;
@@ -75,5 +86,26 @@ mod test {
         let store = LineStore::new();
 
         assert!(store.get_line(Offset(67)).is_none())
+    }
+
+    #[test]
+    fn add_bytes() {
+        let mut store = LineStore::new();
+        let mut lines = Vec::new();
+
+        let byte_slices = (0..356).collect::<Vec<usize>>();
+
+        for (idx, chunk) in byte_slices.chunks(14).enumerate() {
+            store.add_bytes(idx, chunk.len());
+            lines.push(idx);
+        }
+
+        for i in byte_slices {
+            let line = store.get_line(Offset(i));
+            assert!(line.is_some());
+
+            let expected_line = if i < 14 { 0 } else { i / 14 };
+            assert_eq!(line, Some(expected_line));
+        }
     }
 }
