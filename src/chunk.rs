@@ -13,6 +13,7 @@ use crate::{
     value::{Value, ValueError, Values},
 };
 
+/// A chunk of bytecode.
 pub struct Chunk {
     name: &'static str,
     values: Values,
@@ -20,9 +21,20 @@ pub struct Chunk {
     lines: LineStore,
 }
 
+/// An enumeration of all operations supported by our instruction set.
 #[repr(u8)]
 pub enum OpCode {
+    /// Return from a function.
     Return = 0,
+
+    /// Represents a constant in the instruction stream. Constants are not
+    /// stored in the stream itself, but in a global value store (see
+    /// [`Values`]) and the [`Offset`] into the store is stored in the
+    /// bytestream, as a suffix to the opcode.
+    ///
+    /// An [`Offset`] is internally represented as a usize (usually 8 bytes),
+    /// therefore, we can store up to usize::MAX constants. But we will probably
+    /// run out of memory long before then
     Constant = 1,
 }
 
@@ -46,22 +58,24 @@ impl Chunk {
         }
     }
 
+    /// Write a single opcode into the bytestream and associate it with a line
+    /// from the source code.
     pub fn write(&mut self, byte: OpCode, line: usize) {
         self.code.push(byte as u8);
         self.lines.add_byte(line);
     }
 
-    // TODO: add new method to line store to add a slice of bytes to a single line
-    fn write_bytes(&mut self, bytes: &[u8], line: usize) {
-        self.code.extend_from_slice(bytes);
-        self.lines.add_bytes(line, bytes.len());
-    }
-
+    /// Write a constant to the bytestream.
     pub fn write_constant(&mut self, constant: f64, line: usize) -> Result<(), ChunkError> {
         let offset = self.values.add_constant(Value(constant))?;
         self.write(OpCode::Constant, line);
         self.write_bytes(offset.as_bytes(), line);
         Ok(())
+    }
+
+    fn write_bytes(&mut self, bytes: &[u8], line: usize) {
+        self.code.extend_from_slice(bytes);
+        self.lines.add_bytes(line, bytes.len());
     }
 }
 
