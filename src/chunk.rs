@@ -1,4 +1,7 @@
-use std::fmt::Display;
+use std::{
+    fmt::Display,
+    sync::atomic::{AtomicUsize, Ordering},
+};
 
 use anyhow::Context;
 use thiserror::Error;
@@ -79,14 +82,14 @@ impl Display for Chunk {
 /// Formats a given chunk
 pub struct ChunkFormatter<'chunk> {
     chunk: &'chunk Chunk,
-    current_line: usize,
+    current_line: AtomicUsize,
 }
 
 impl<'chunk> ChunkFormatter<'chunk> {
     pub fn from_chunk(chunk: &'chunk Chunk) -> Self {
         ChunkFormatter {
             chunk,
-            current_line: 0,
+            current_line: AtomicUsize::new(0),
         }
     }
 
@@ -100,6 +103,8 @@ impl<'chunk> ChunkFormatter<'chunk> {
                 .lines
                 .get_line(byte_offset)
                 .ok_or(FormatterError::NoLine(byte_offset))?;
+
+            self.current_line.store(src_line, Ordering::Release);
 
             offset = match self.chunk.code[offset] {
                 0 => self
@@ -134,7 +139,7 @@ impl<'chunk> ChunkFormatter<'chunk> {
         line: usize,
     ) -> Result<usize, FormatterError> {
         buffer.push_str(&format!("{:>4}", offset));
-        self.insert_line(buffer, line);
+        self.insert_line(offset, buffer, line);
         buffer.push_str(&format!(" {}\n", op_name));
 
         Ok(offset + 1)
@@ -148,7 +153,7 @@ impl<'chunk> ChunkFormatter<'chunk> {
         line: usize,
     ) -> Result<usize, FormatterError> {
         buffer.push_str(&format!("{:>4}", offset));
-        self.insert_line(buffer, line);
+        self.insert_line(offset, buffer, line);
         buffer.push_str(&format!(" {}", op_name));
 
         let idx_offset = offset + 1;
@@ -168,8 +173,8 @@ impl<'chunk> ChunkFormatter<'chunk> {
         Ok(offset + 1 + OFFSET_SIZE)
     }
 
-    fn insert_line(&self, buffer: &mut String, line: usize) {
-        if line == self.current_line {
+    fn insert_line(&self, offset: usize, buffer: &mut String, line: usize) {
+        if offset > 0 && line == self.current_line.load(Ordering::Acquire) {
             buffer.push_str(&"   |");
         } else {
             buffer.push_str(&format!("{:>4}", line))
@@ -222,6 +227,6 @@ mod test {
         let result = formatter.format(&mut buffer);
 
         assert!(result.is_ok());
-        assert_eq!(buffer, "   0   1 OP_RETURN\n   1   1 OP_CONSTANT 5\n");
+        assert_eq!(buffer, "   0   1 OP_RETURN\n   1   | OP_CONSTANT 5\n");
     }
 }
