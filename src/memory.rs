@@ -13,3 +13,11 @@ impl Display for Offset {
         write!(f, "{}", self.0)
     }
 }
+
+impl Instruction for Offset {
+    const SIZE: usize = std::mem::size_of::<Offset>();
+}
+
+pub trait Instruction {
+    const SIZE: usize;
+}

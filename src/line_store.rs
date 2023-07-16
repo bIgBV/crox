@@ -1,5 +1,6 @@
 use crate::memory::Offset;
 
+#[derive(Debug)]
 pub struct LineStore {
     spans: Vec<Span>,
 }
@@ -54,6 +55,7 @@ impl LineStore {
 }
 
 /// Represents a span on code
+#[derive(Debug)]
 pub struct Span {
     /// The associated line from the source code
     line: usize,

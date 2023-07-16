@@ -9,15 +9,16 @@ use zerocopy::{AsBytes, FromBytes};
 
 use crate::{
     line_store::LineStore,
-    memory::{Offset, OFFSET_SIZE},
+    memory::{Instruction, Offset, OFFSET_SIZE},
     value::{Value, ValueError, Values},
 };
 
 /// A chunk of bytecode.
+#[derive(Debug)]
 pub struct Chunk {
     name: &'static str,
     values: Values,
-    code: Vec<u8>,
+    pub code: Vec<u8>,
     lines: LineStore,
 }
 
@@ -73,6 +74,10 @@ impl Chunk {
         Ok(())
     }
 
+    pub fn get_value(&self, offset: Offset) -> Option<Value> {
+        self.values.get(offset)
+    }
+
     fn write_bytes(&mut self, bytes: &[u8], line: usize) {
         self.code.extend_from_slice(bytes);
         self.lines.add_bytes(line, bytes.len());
@@ -94,8 +99,8 @@ impl Display for Chunk {
 }
 
 #[derive(thiserror::Error, Debug)]
-#[error("{0}")]
 pub enum ChunkError {
+    #[error("Constant store: {0}")]
     ConstantStore(#[from] ValueError),
 }
 
@@ -178,7 +183,7 @@ impl<'chunk> ChunkFormatter<'chunk> {
 
         let idx_offset = offset + 1;
         let parsed_offset =
-            Offset::read_from(&self.chunk.code[idx_offset..idx_offset + OFFSET_SIZE]);
+            Offset::read_from(&self.chunk.code[idx_offset..idx_offset + Offset::SIZE]);
 
         if let Some(idx) = parsed_offset {
             if let Some(val) = self.chunk.values.get(idx) {
@@ -195,7 +200,7 @@ impl<'chunk> ChunkFormatter<'chunk> {
 
     fn insert_line(&self, offset: usize, buffer: &mut String, line: usize) {
         if offset > 0 && line == self.current_line.load(Ordering::Acquire) {
-            buffer.push_str(&"   |");
+            buffer.push_str("   |");
         } else {
             buffer.push_str(&format!("{:>4}", line))
         }
