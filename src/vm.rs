@@ -29,17 +29,18 @@ impl<'chunk> Vm<'chunk> {
     }
 
     pub fn run(&mut self) -> Result<(), VmError> {
+        let mut chunk = self
+            .chunk
+            .take()
+            .expect("Run called with no chunk initialized");
+
         loop {
-            match self.read_byte().expect("Unable to read instruction") {
+            match self.read_byte(&chunk) {
                 OpCode::Return => return Ok(()),
                 OpCode::Constant => {
                     let constant = self
-                        .read_type::<Offset>()
-                        .and_then(|offset| {
-                            self.chunk
-                                .as_ref()
-                                .and_then(|chunk| chunk.get_value(offset))
-                        })
+                        .read_type::<Offset>(&mut chunk)
+                        .and_then(|offset| chunk.get_value(offset))
                         .expect("No constant value found");
 
                     info!(%constant);
@@ -48,25 +49,20 @@ impl<'chunk> Vm<'chunk> {
         }
     }
 
-    fn read_byte(&self) -> Option<OpCode> {
-        self.chunk
-            .as_ref()
-            .map(|chunk| chunk.code[self.ip.fetch_add(1, Ordering::AcqRel)])
-            .map(|byte| byte.into())
+    fn read_byte(&self, chunk: &Chunk) -> OpCode {
+        chunk.code[self.ip.fetch_add(1, Ordering::AcqRel)].into()
     }
 
-    fn read_type<T>(&mut self) -> Option<T>
+    fn read_type<T>(&self, chunk: &mut Chunk) -> Option<T>
     where
         T: Instruction + FromBytes,
     {
-        self.chunk.as_mut().and_then(|chunk| {
-            let ip = self.ip.load(Ordering::Acquire);
-            let instruction = ip + T::SIZE;
-            let val = T::read_from(&mut chunk.code[ip..instruction]);
-            self.ip.store(instruction, Ordering::Release);
+        let ip = self.ip.load(Ordering::Acquire);
+        let instruction = ip + T::SIZE;
+        let val = T::read_from(&mut chunk.code[ip..instruction]);
+        self.ip.store(instruction, Ordering::Release);
 
-            val
-        })
+        val
     }
 }
 
