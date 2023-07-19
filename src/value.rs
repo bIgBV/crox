@@ -9,6 +9,7 @@ pub struct Values {
 }
 
 #[derive(Debug)]
+// TODO impl std::ops
 pub struct Value(pub f64);
 
 impl std::fmt::Display for Value {

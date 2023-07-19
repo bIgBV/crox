@@ -1,4 +1,5 @@
 use std::fmt::{self, Debug};
+use std::hint::unreachable_unchecked;
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
     RwLock,
@@ -11,6 +12,7 @@ use scc::{
 use thiserror::Error;
 use tracing::{debug, error, instrument};
 
+use crate::value::Value;
 use crate::{
     chunk::{Chunk, OpCode},
     memory::{Instruction, Offset},
@@ -61,8 +63,7 @@ impl<'chunk> Vm<'chunk> {
         // TODO: Is Relaxed ordering here ok if we are AcqRel within the loop itself?
         while self.ip.load(Ordering::Relaxed) < chunk.code.len() {
             let instruction = self.read_byte(chunk);
-            debug!(stack = %self.dump_stack(chunk));
-            debug!(instruction = ?instruction);
+            debug!(instruction = ?instruction, stack = %self.dump_stack(chunk));
 
             match instruction {
                 OpCode::Return => {
@@ -81,6 +82,16 @@ impl<'chunk> Vm<'chunk> {
 
                     self.push(value_offset);
                 }
+                OpCode::Negate => {
+                    let value = chunk
+                        .get_value(&self.pop().ok_or(VmError::Runtime)?)
+                        .ok_or(VmError::Runtime)?;
+                    self.push(chunk.add_value(Value(-value.0)).unwrap());
+                }
+                OpCode::Add => self.binary_op(OpCode::Add, chunk)?,
+                OpCode::Subtract => self.binary_op(OpCode::Subtract, chunk)?,
+                OpCode::Multiply => self.binary_op(OpCode::Multiply, chunk)?,
+                OpCode::Divide => self.binary_op(OpCode::Divide, chunk)?,
             }
         }
 
@@ -103,6 +114,25 @@ impl<'chunk> Vm<'chunk> {
         self.ip.store(instruction, Ordering::Release);
 
         val
+    }
+
+    fn binary_op(&self, op: OpCode, chunk: &Chunk) -> Result<(), VmError> {
+        let b = chunk
+            .get_value(&self.pop().ok_or(VmError::Runtime)?)
+            .ok_or(VmError::Runtime)?;
+        let a = chunk
+            .get_value(&self.pop().ok_or(VmError::Runtime)?)
+            .ok_or(VmError::Runtime)?;
+
+        match op {
+            OpCode::Add => self.push(chunk.add_value(Value(b.0 + a.0)).unwrap()),
+            OpCode::Subtract => self.push(chunk.add_value(Value(b.0 - a.0)).unwrap()),
+            OpCode::Multiply => self.push(chunk.add_value(Value(b.0 * a.0)).unwrap()),
+            OpCode::Divide => self.push(chunk.add_value(Value(b.0 / a.0)).unwrap()),
+            _ => panic!("This should never happen"),
+        };
+
+        Ok(())
     }
 
     #[instrument]

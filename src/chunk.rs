@@ -38,6 +38,16 @@ pub enum OpCode {
     /// therefore, we can store up to usize::MAX constants. But we will probably
     /// run out of memory long before then
     Constant = 1,
+
+    Add = 2,
+
+    Subtract = 3,
+
+    Multiply = 4,
+
+    Divide = 5,
+
+    Negate = 6,
 }
 
 impl From<u8> for OpCode {
@@ -45,6 +55,11 @@ impl From<u8> for OpCode {
         match value {
             0 => OpCode::Return,
             1 => OpCode::Constant,
+            2 => OpCode::Add,
+            3 => OpCode::Subtract,
+            4 => OpCode::Multiply,
+            5 => OpCode::Divide,
+            6 => OpCode::Negate,
             _ => unimplemented!("We need more op codes"),
         }
     }
@@ -77,6 +92,10 @@ impl Chunk {
 
     pub fn get_value(&self, offset: &Offset) -> Option<Value> {
         self.values.get(*offset)
+    }
+
+    pub fn add_value(&self, value: Value) -> Result<Offset, ChunkError> {
+        self.values.add_constant(value).map_err(|err| err.into())
     }
 
     fn write_bytes(&mut self, bytes: &[u8], line: usize) {

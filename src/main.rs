@@ -26,8 +26,15 @@ fn main() -> Result<()> {
 
     let mut chunk = Chunk::new("test");
     chunk.write_constant(4.5, 1)?;
+
     chunk.write_constant(6.9, 1)?;
-    chunk.write(OpCode::Return, 1);
+    chunk.write(OpCode::Add, 2);
+
+    chunk.write_constant(8.6, 2)?;
+
+    chunk.write(OpCode::Divide, 2);
+    chunk.write(OpCode::Negate, 2);
+    chunk.write(OpCode::Return, 3);
     let vm = Vm::new();
     vm.interpret(&mut chunk)?;
 
