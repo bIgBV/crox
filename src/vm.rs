@@ -1,12 +1,15 @@
+use std::fmt::{self, Debug};
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
     RwLock,
 };
 
-use concat_string::concat_string;
-use scc::{ebr::Arc, LinkedEntry, Stack};
+use scc::{
+    ebr::{Arc, Barrier},
+    LinkedEntry, Stack,
+};
 use thiserror::Error;
-use tracing::{debug, instrument};
+use tracing::{debug, error, instrument};
 
 use crate::{
     chunk::{Chunk, OpCode},
@@ -16,7 +19,9 @@ use crate::{
 #[derive(Debug)]
 pub struct Vm<'chunk> {
     chunk: RwLock<Option<&'chunk Chunk>>,
-    stack: Stack<Offset>,
+    // Good enough for now and helps with debugging. If this becomes a bottleneck
+    // we can optimize it as all calls are abstracted away behind push and pop
+    stack: RwLock<Vec<Offset>>,
     ip: AtomicUsize,
 }
 
@@ -26,7 +31,7 @@ impl<'chunk> Vm<'chunk> {
     pub fn new() -> Self {
         Vm {
             chunk: RwLock::new(None),
-            stack: Stack::default(),
+            stack: RwLock::new(Vec::new()),
             ip: AtomicUsize::new(0),
         }
     }
@@ -56,15 +61,13 @@ impl<'chunk> Vm<'chunk> {
         // TODO: Is Relaxed ordering here ok if we are AcqRel within the loop itself?
         while self.ip.load(Ordering::Relaxed) < chunk.code.len() {
             let instruction = self.read_byte(chunk);
-            debug!(stack = ?self.stack);
+            debug!(stack = %self.dump_stack(chunk));
             debug!(instruction = ?instruction);
 
             match instruction {
                 OpCode::Return => {
                     if let Some(value_offset) = self.pop() {
-                        let value = chunk
-                            .get_value(value_offset.as_ref())
-                            .ok_or(VmError::Runtime)?;
+                        let value = chunk.get_value(&value_offset).ok_or(VmError::Runtime)?;
                         debug!(%value);
                         return Ok(());
                     } else {
@@ -104,12 +107,28 @@ impl<'chunk> Vm<'chunk> {
 
     #[instrument]
     fn push(&self, value_offset: Offset) {
-        self.stack.push(value_offset);
+        (*self.stack.write().unwrap()).push(value_offset);
     }
 
     #[instrument]
-    fn pop(&self) -> Option<StackEntry> {
-        self.stack.pop()
+    fn pop(&self) -> Option<Offset> {
+        (*self.stack.write().unwrap()).pop()
+    }
+
+    fn dump_stack(&self, chunk: &Chunk) -> String {
+        self.stack
+            .read()
+            .unwrap()
+            .iter()
+            .map(|offset| {
+                if let Some(value) = chunk.get_value(offset) {
+                    format!("[{:#}:{:#}]", offset, value)
+                } else {
+                    error!(offset = ?offset, "Unable to get value for offset");
+                    panic!("DUDE I DON'T KNOW");
+                }
+            })
+            .collect()
     }
 }
 
