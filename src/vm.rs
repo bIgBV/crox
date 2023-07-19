@@ -1,14 +1,9 @@
-use std::fmt::{self, Debug};
-use std::hint::unreachable_unchecked;
+use std::fmt::Debug;
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
     RwLock,
 };
 
-use scc::{
-    ebr::{Arc, Barrier},
-    LinkedEntry, Stack,
-};
 use thiserror::Error;
 use tracing::{debug, error, instrument};
 
@@ -26,8 +21,6 @@ pub struct Vm<'chunk> {
     stack: RwLock<Vec<Offset>>,
     ip: AtomicUsize,
 }
-
-type StackEntry = Arc<LinkedEntry<Offset>>;
 
 impl<'chunk> Vm<'chunk> {
     pub fn new() -> Self {

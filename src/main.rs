@@ -36,7 +36,7 @@ fn main() -> Result<()> {
     chunk.write(OpCode::Negate, 2);
     chunk.write(OpCode::Return, 3);
     let vm = Vm::new();
-    vm.interpret(&mut chunk)?;
+    vm.interpret(&chunk)?;
 
     Ok(())
 }
