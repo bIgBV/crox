@@ -1,5 +1,6 @@
 use anyhow::Result;
-use tracing::{info, Level};
+use tracing::Level;
+
 use tracing_subscriber::FmtSubscriber;
 
 use crate::{
@@ -25,10 +26,9 @@ fn main() -> Result<()> {
 
     let mut chunk = Chunk::new("test");
     chunk.write_constant(4.5, 1)?;
+    chunk.write_constant(6.9, 1)?;
     chunk.write(OpCode::Return, 1);
-    info!(%chunk);
-
-    let mut vm = Vm::new();
+    let vm = Vm::new();
     vm.interpret(&mut chunk)?;
 
     Ok(())

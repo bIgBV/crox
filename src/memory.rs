@@ -18,6 +18,6 @@ impl Instruction for Offset {
     const SIZE: usize = std::mem::size_of::<Offset>();
 }
 
-pub trait Instruction {
+pub trait Instruction: FromBytes {
     const SIZE: usize;
 }

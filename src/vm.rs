@@ -1,15 +1,12 @@
-use std::{
-    ops::Deref,
-    sync::{
-        atomic::{AtomicUsize, Ordering},
-        RwLock,
-    },
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    RwLock,
 };
 
-use scc::Stack;
+use concat_string::concat_string;
+use scc::{ebr::Arc, LinkedEntry, Stack};
 use thiserror::Error;
-use tracing::info;
-use zerocopy::FromBytes;
+use tracing::{debug, instrument};
 
 use crate::{
     chunk::{Chunk, OpCode},
@@ -22,6 +19,8 @@ pub struct Vm<'chunk> {
     stack: Stack<Offset>,
     ip: AtomicUsize,
 }
+
+type StackEntry = Arc<LinkedEntry<Offset>>;
 
 impl<'chunk> Vm<'chunk> {
     pub fn new() -> Self {
@@ -56,15 +55,28 @@ impl<'chunk> Vm<'chunk> {
     fn run_loop(&self, chunk: &Chunk) -> Result<(), VmError> {
         // TODO: Is Relaxed ordering here ok if we are AcqRel within the loop itself?
         while self.ip.load(Ordering::Relaxed) < chunk.code.len() {
-            match self.read_byte(chunk) {
-                OpCode::Return => return Ok(()),
+            let instruction = self.read_byte(chunk);
+            debug!(stack = ?self.stack);
+            debug!(instruction = ?instruction);
+
+            match instruction {
+                OpCode::Return => {
+                    if let Some(value_offset) = self.pop() {
+                        let value = chunk
+                            .get_value(value_offset.as_ref())
+                            .ok_or(VmError::Runtime)?;
+                        debug!(%value);
+                        return Ok(());
+                    } else {
+                        return Err(VmError::Runtime);
+                    }
+                }
                 OpCode::Constant => {
-                    let constant = self
+                    let value_offset = self
                         .read_type::<Offset>(chunk)
-                        .and_then(|offset| chunk.get_value(offset))
                         .expect("No constant value found");
 
-                    info!(%constant);
+                    self.push(value_offset);
                 }
             }
         }
@@ -72,13 +84,15 @@ impl<'chunk> Vm<'chunk> {
         Ok(())
     }
 
+    #[instrument]
     fn read_byte(&self, chunk: &Chunk) -> OpCode {
         chunk.code[self.ip.fetch_add(1, Ordering::AcqRel)].into()
     }
 
+    #[instrument]
     fn read_type<T>(&self, chunk: &Chunk) -> Option<T>
     where
-        T: Instruction + FromBytes,
+        T: Instruction,
     {
         let ip = self.ip.load(Ordering::Acquire);
         let instruction = ip + T::SIZE;
@@ -86,6 +100,16 @@ impl<'chunk> Vm<'chunk> {
         self.ip.store(instruction, Ordering::Release);
 
         val
+    }
+
+    #[instrument]
+    fn push(&self, value_offset: Offset) {
+        self.stack.push(value_offset);
+    }
+
+    #[instrument]
+    fn pop(&self) -> Option<StackEntry> {
+        self.stack.pop()
     }
 }
 

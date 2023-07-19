@@ -24,6 +24,7 @@ pub struct Chunk {
 
 /// An enumeration of all operations supported by our instruction set.
 #[repr(u8)]
+#[derive(Debug)]
 pub enum OpCode {
     /// Return from a function.
     Return = 0,
@@ -74,8 +75,8 @@ impl Chunk {
         Ok(())
     }
 
-    pub fn get_value(&self, offset: Offset) -> Option<Value> {
-        self.values.get(offset)
+    pub fn get_value(&self, offset: &Offset) -> Option<Value> {
+        self.values.get(*offset)
     }
 
     fn write_bytes(&mut self, bytes: &[u8], line: usize) {
