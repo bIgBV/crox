@@ -90,8 +90,8 @@ impl Chunk {
         Ok(())
     }
 
-    pub fn get_value(&self, offset: &Offset) -> Option<Value> {
-        self.values.get(*offset)
+    pub fn get_value(&self, offset: &Offset) -> Result<Value, ChunkError> {
+        self.values.get(*offset).map_err(|err| err.into())
     }
 
     pub fn add_value(&self, value: Value) -> Result<Offset, ChunkError> {
@@ -206,11 +206,12 @@ impl<'chunk> ChunkFormatter<'chunk> {
             Offset::read_from(&self.chunk.code[idx_offset..idx_offset + Offset::SIZE]);
 
         if let Some(idx) = parsed_offset {
-            if let Some(val) = self.chunk.values.get(idx) {
-                buffer.push_str(&format!(" {}\n", val.0));
-            } else {
-                return Err(FormatterError::Value(idx));
-            }
+            let val = self
+                .chunk
+                .values
+                .get(idx)
+                .map_err(|_| FormatterError::Value(idx))?;
+            buffer.push_str(&format!(" {}\n", val.0));
         } else {
             return Err(FormatterError::OffsetParse(offset));
         }

@@ -7,6 +7,7 @@ use std::sync::{
 use thiserror::Error;
 use tracing::{debug, error, instrument};
 
+use crate::chunk::ChunkError;
 use crate::value::Value;
 use crate::{
     chunk::{Chunk, OpCode},
@@ -60,13 +61,9 @@ impl<'chunk> Vm<'chunk> {
 
             match instruction {
                 OpCode::Return => {
-                    if let Some(value_offset) = self.pop() {
-                        let value = chunk.get_value(&value_offset).ok_or(VmError::Runtime)?;
-                        debug!(%value);
-                        return Ok(());
-                    } else {
-                        return Err(VmError::Runtime);
-                    }
+                    let value = chunk.get_value(&self.pop())?;
+                    debug!(%value);
+                    return Ok(());
                 }
                 OpCode::Constant => {
                     let value_offset = self
@@ -76,9 +73,7 @@ impl<'chunk> Vm<'chunk> {
                     self.push(value_offset);
                 }
                 OpCode::Negate => {
-                    let value = chunk
-                        .get_value(&self.pop().ok_or(VmError::Runtime)?)
-                        .ok_or(VmError::Runtime)?;
+                    let value = chunk.get_value(&self.pop())?;
                     self.push(chunk.add_value(Value(-value.0)).unwrap());
                 }
                 OpCode::Add => self.binary_op(OpCode::Add, chunk)?,
@@ -110,18 +105,14 @@ impl<'chunk> Vm<'chunk> {
     }
 
     fn binary_op(&self, op: OpCode, chunk: &Chunk) -> Result<(), VmError> {
-        let b = chunk
-            .get_value(&self.pop().ok_or(VmError::Runtime)?)
-            .ok_or(VmError::Runtime)?;
-        let a = chunk
-            .get_value(&self.pop().ok_or(VmError::Runtime)?)
-            .ok_or(VmError::Runtime)?;
+        let b = chunk.get_value(&self.pop())?;
+        let a = chunk.get_value(&self.pop())?;
 
         match op {
-            OpCode::Add => self.push(chunk.add_value(Value(b.0 + a.0)).unwrap()),
-            OpCode::Subtract => self.push(chunk.add_value(Value(b.0 - a.0)).unwrap()),
-            OpCode::Multiply => self.push(chunk.add_value(Value(b.0 * a.0)).unwrap()),
-            OpCode::Divide => self.push(chunk.add_value(Value(b.0 / a.0)).unwrap()),
+            OpCode::Add => self.push(chunk.add_value(b + a)?),
+            OpCode::Subtract => self.push(chunk.add_value(b - a)?),
+            OpCode::Multiply => self.push(chunk.add_value(b * a)?),
+            OpCode::Divide => self.push(chunk.add_value(b / a)?),
             _ => panic!("This should never happen"),
         };
 
@@ -134,8 +125,13 @@ impl<'chunk> Vm<'chunk> {
     }
 
     #[instrument]
-    fn pop(&self) -> Option<Offset> {
-        (*self.stack.write().unwrap()).pop()
+    fn pop(&self) -> Offset {
+        debug_assert!(
+            self.stack.read().unwrap().len() >= 1,
+            "Stack popped with no items"
+        );
+
+        (*self.stack.write().unwrap()).pop().unwrap()
     }
 
     fn dump_stack(&self, chunk: &Chunk) -> String {
@@ -144,12 +140,8 @@ impl<'chunk> Vm<'chunk> {
             .unwrap()
             .iter()
             .map(|offset| {
-                if let Some(value) = chunk.get_value(offset) {
-                    format!("[{:#}:{:#}]", offset, value)
-                } else {
-                    error!(offset = ?offset, "Unable to get value for offset");
-                    panic!("DUDE I DON'T KNOW");
-                }
+                let value = chunk.get_value(offset).expect("Error getting value");
+                format!("[{:#}:{:#}]", offset, value)
             })
             .collect()
     }
@@ -163,6 +155,9 @@ pub enum VmError {
 
     #[error("Runtime error")]
     Runtime,
+
+    #[error("Error with value store: {0}")]
+    ChunkError(#[from] ChunkError),
 }
 
 #[cfg(test)]
