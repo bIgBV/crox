@@ -220,10 +220,11 @@ impl<'source> Iterator for Scanner<'source> {
     type Item = Token<'source>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        debug!("Generating token");
+        // Skip whitespace before producing a new token
+        self.skip_whitespace();
+        let mut token = None;
+
         if !self.is_at_end() {
-            // Skip whitespace before producing a new token
-            self.skip_whitespace();
             // Advance scanner to the current idx
             self.start = self.current;
 
@@ -237,7 +238,7 @@ impl<'source> Iterator for Scanner<'source> {
                 return Some(self.number());
             }
 
-            match c {
+            token = match c {
                 '(' => Some(self.make_token(TokenType::LeftParen)),
                 ')' => Some(self.make_token(TokenType::RightParen)),
                 '{' => Some(self.make_token(TokenType::LeftBrace)),
@@ -283,10 +284,13 @@ impl<'source> Iterator for Scanner<'source> {
                 }
                 '"' => Some(self.string()),
                 _ => Some(self.make_token(TokenType::Error)),
-            }
-        } else {
-            None
+            };
         }
+
+        if token.is_some() {
+            debug!(token=%token.as_ref().unwrap());
+        }
+        token
     }
 }
 
