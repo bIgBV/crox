@@ -48,9 +48,7 @@ impl<'source> Scanner<'source> {
     }
 
     fn match_char(&mut self, expected: char) -> bool {
-        if self.is_at_end() {
-            false
-        } else if self.current_char() != Some(expected) {
+        if self.is_at_end() || self.current_char() != Some(expected) {
             false
         } else {
             self.advance();
@@ -129,15 +127,15 @@ impl<'source> Scanner<'source> {
     }
 
     fn number(&mut self) -> Token<'source> {
-        while self.peek().is_some_and(|c| c.is_digit(10)) {
+        while self.peek().is_some_and(|c| c.is_ascii_digit()) {
             self.advance();
         }
 
         // Look for the fractional part
-        if self.peek() == Some('.') && self.peek_next().is_some_and(|c| c.is_digit(10)) {
+        if self.peek() == Some('.') && self.peek_next().is_some_and(|c| c.is_ascii_digit()) {
             // Consume the "."
             self.advance();
-            while self.peek().is_some_and(|c| c.is_digit(10)) {
+            while self.peek().is_some_and(|c| c.is_ascii_digit()) {
                 self.advance();
             }
         }
@@ -217,7 +215,7 @@ impl<'source> Iterator for Scanner<'source> {
                 return Some(self.identifier());
             }
 
-            if c.is_digit(10) {
+            if c.is_ascii_digit() {
                 return Some(self.number());
             }
 
