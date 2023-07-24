@@ -813,4 +813,141 @@ mod test {
             })
         );
     }
+
+    #[test]
+    fn test_simple_if_expression() {
+        let source = "if (5 > 2) { yes } else { false }";
+        let mut scanner = Scanner::init(source);
+
+        assert_eq!(
+            scanner.next(),
+            Some(Token {
+                kind: TokenType::If,
+                start: 0,
+                length: 2,
+                line: 1,
+                source
+            })
+        );
+        assert_eq!(
+            scanner.next(),
+            Some(Token {
+                kind: TokenType::LeftParen,
+                start: 3,
+                length: 1,
+                line: 1,
+                source
+            })
+        );
+        assert_eq!(
+            scanner.next(),
+            Some(Token {
+                kind: TokenType::Number,
+                start: 4,
+                length: 1,
+                line: 1,
+                source
+            })
+        );
+        assert_eq!(
+            scanner.next(),
+            Some(Token {
+                kind: TokenType::Greater,
+                start: 6,
+                length: 1,
+                line: 1,
+                source
+            })
+        );
+        assert_eq!(
+            scanner.next(),
+            Some(Token {
+                kind: TokenType::Number,
+                start: 8,
+                length: 1,
+                line: 1,
+                source
+            })
+        );
+        assert_eq!(
+            scanner.next(),
+            Some(Token {
+                kind: TokenType::RightParen,
+                start: 9,
+                length: 1,
+                line: 1,
+                source
+            })
+        );
+        assert_eq!(
+            scanner.next(),
+            Some(Token {
+                kind: TokenType::LeftBrace,
+                start: 11,
+                length: 1,
+                line: 1,
+                source
+            })
+        );
+        assert_eq!(
+            scanner.next(),
+            Some(Token {
+                kind: TokenType::Identifier,
+                start: 13,
+                length: 3,
+                line: 1,
+                source
+            })
+        );
+        assert_eq!(
+            scanner.next(),
+            Some(Token {
+                kind: TokenType::RightBrace,
+                start: 17,
+                length: 1,
+                line: 1,
+                source
+            })
+        );
+        assert_eq!(
+            scanner.next(),
+            Some(Token {
+                kind: TokenType::Else,
+                start: 19,
+                length: 4,
+                line: 1,
+                source
+            })
+        );
+        assert_eq!(
+            scanner.next(),
+            Some(Token {
+                kind: TokenType::LeftBrace,
+                start: 24,
+                length: 1,
+                line: 1,
+                source
+            })
+        );
+        assert_eq!(
+            scanner.next(),
+            Some(Token {
+                kind: TokenType::False,
+                start: 26,
+                length: 5,
+                line: 1,
+                source
+            })
+        );
+        assert_eq!(
+            scanner.next(),
+            Some(Token {
+                kind: TokenType::RightBrace,
+                start: 32,
+                length: 1,
+                line: 1,
+                source
+            })
+        );
+    }
 }
