@@ -24,7 +24,7 @@ impl<'source> Scanner<'source> {
     fn is_at_end(&self) -> bool {
         // Whenever we reach the end of the source.
         // We should never go past the end, but I'm being defensive.
-        self.current > self.source.len()
+        self.current > self.source.len() - 1
     }
 
     fn make_token(&self, kind: TokenType) -> Token<'source> {
@@ -339,6 +339,24 @@ pub enum TokenType {
 mod test {
     use super::*;
     use pretty_assertions::assert_eq;
+
+    #[test]
+    fn test_termination() {
+        let source = ".";
+        let mut scanner = Scanner::init(source);
+
+        assert_eq!(
+            scanner.next(),
+            Some(Token {
+                kind: TokenType::Dot,
+                start: 0,
+                length: 1,
+                line: 1,
+                source
+            })
+        );
+        assert_eq!(scanner.next(), None);
+    }
 
     #[test]
     fn single_character_tokens() {
@@ -942,5 +960,7 @@ mod test {
                 source
             })
         );
+
+        assert_eq!(scanner.next(), None);
     }
 }
