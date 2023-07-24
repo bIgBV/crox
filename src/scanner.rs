@@ -96,6 +96,11 @@ impl<'source> Scanner<'source> {
         self.source.chars().nth(self.current)
     }
 
+    fn start_char(&self, idx: usize) -> char {
+        debug_assert!(self.start < self.current, "Start not less than current");
+        self.source.chars().nth(self.start + idx).unwrap()
+    }
+
     fn peek_next(&mut self) -> Option<char> {
         if self.is_at_end() {
             None
@@ -144,6 +149,61 @@ impl<'source> Scanner<'source> {
 
         self.make_token(TokenType::Number)
     }
+
+    fn identifier(&mut self) -> Token<'source> {
+        while let Some(true) = self.peek().map(|c| c.is_alphanumeric()) {
+            self.advance();
+        }
+
+        self.make_token(self.identifier_type())
+    }
+
+    fn identifier_type(&self) -> TokenType {
+        match self.start_char(0) {
+            'a' => self.check_keyword(1, 2, "nd", TokenType::And),
+            'c' => self.check_keyword(1, 4, "lass", TokenType::Class),
+            'e' => self.check_keyword(1, 3, "lse", TokenType::Else),
+            'i' => self.check_keyword(1, 1, "f", TokenType::If),
+            'f' => match self.start_char(1) {
+                'a' => self.check_keyword(2, 3, "lse", TokenType::False),
+                'o' => self.check_keyword(2, 1, "r", TokenType::For),
+                'u' => self.check_keyword(2, 1, "n", TokenType::Fun),
+                _ => TokenType::Identifier,
+            },
+            't' => match self.start_char(1) {
+                'h' => self.check_keyword(2, 2, "is", TokenType::This),
+                'r' => self.check_keyword(2, 2, "ue", TokenType::True),
+                _ => TokenType::Identifier,
+            },
+            'n' => self.check_keyword(1, 2, "il", TokenType::Nil),
+            'o' => self.check_keyword(1, 1, "r", TokenType::Or),
+            'p' => self.check_keyword(1, 4, "rint", TokenType::Print),
+            'r' => self.check_keyword(1, 5, "eturn", TokenType::Return),
+            's' => self.check_keyword(1, 4, "uper", TokenType::Super),
+            'v' => self.check_keyword(1, 2, "ar", TokenType::Var),
+            'w' => self.check_keyword(1, 4, "hile", TokenType::While),
+            _ => TokenType::Identifier,
+        }
+    }
+
+    fn check_keyword(
+        &self,
+        start: usize,
+        length: usize,
+        rest: &'static str,
+        token_type: TokenType,
+    ) -> TokenType {
+        let keyword_start = self.start + start;
+        if self
+            .source
+            .get(keyword_start..keyword_start + length)
+            .is_some_and(|keyword_chunk| keyword_chunk == rest)
+        {
+            token_type
+        } else {
+            TokenType::Identifier
+        }
+    }
 }
 
 impl<'source> Iterator for Scanner<'source> {
@@ -157,6 +217,10 @@ impl<'source> Iterator for Scanner<'source> {
 
         if !self.is_at_end() {
             let c = self.advance();
+
+            if c.is_alphabetic() {
+                return Some(self.identifier());
+            }
 
             if c.is_digit(10) {
                 return Some(self.number());
@@ -576,6 +640,174 @@ mod test {
                 kind: TokenType::Number,
                 start: 6,
                 length: 4,
+                line: 1,
+                source
+            })
+        );
+    }
+
+    #[test]
+    fn test_keywords() {
+        let source =
+            "and class else false for fun if nil or print return super this true var while";
+        let mut scanner = Scanner::init(source);
+
+        assert_eq!(
+            scanner.next(),
+            Some(Token {
+                kind: TokenType::And,
+                start: 0,
+                length: 3,
+                line: 1,
+                source
+            })
+        );
+        assert_eq!(
+            scanner.next(),
+            Some(Token {
+                kind: TokenType::Class,
+                start: 4,
+                length: 5,
+                line: 1,
+                source
+            })
+        );
+        assert_eq!(
+            scanner.next(),
+            Some(Token {
+                kind: TokenType::Else,
+                start: 10,
+                length: 4,
+                line: 1,
+                source
+            })
+        );
+        assert_eq!(
+            scanner.next(),
+            Some(Token {
+                kind: TokenType::False,
+                start: 15,
+                length: 5,
+                line: 1,
+                source
+            })
+        );
+        assert_eq!(
+            scanner.next(),
+            Some(Token {
+                kind: TokenType::For,
+                start: 21,
+                length: 3,
+                line: 1,
+                source
+            })
+        );
+        assert_eq!(
+            scanner.next(),
+            Some(Token {
+                kind: TokenType::Fun,
+                start: 25,
+                length: 3,
+                line: 1,
+                source
+            })
+        );
+        assert_eq!(
+            scanner.next(),
+            Some(Token {
+                kind: TokenType::If,
+                start: 29,
+                length: 2,
+                line: 1,
+                source
+            })
+        );
+        assert_eq!(
+            scanner.next(),
+            Some(Token {
+                kind: TokenType::Nil,
+                start: 32,
+                length: 3,
+                line: 1,
+                source
+            })
+        );
+        assert_eq!(
+            scanner.next(),
+            Some(Token {
+                kind: TokenType::Or,
+                start: 36,
+                length: 2,
+                line: 1,
+                source
+            })
+        );
+        assert_eq!(
+            scanner.next(),
+            Some(Token {
+                kind: TokenType::Print,
+                start: 39,
+                length: 5,
+                line: 1,
+                source
+            })
+        );
+        assert_eq!(
+            scanner.next(),
+            Some(Token {
+                kind: TokenType::Return,
+                start: 45,
+                length: 6,
+                line: 1,
+                source
+            })
+        );
+        assert_eq!(
+            scanner.next(),
+            Some(Token {
+                kind: TokenType::Super,
+                start: 52,
+                length: 5,
+                line: 1,
+                source
+            })
+        );
+        assert_eq!(
+            scanner.next(),
+            Some(Token {
+                kind: TokenType::This,
+                start: 58,
+                length: 4,
+                line: 1,
+                source
+            })
+        );
+        assert_eq!(
+            scanner.next(),
+            Some(Token {
+                kind: TokenType::True,
+                start: 63,
+                length: 4,
+                line: 1,
+                source
+            })
+        );
+        assert_eq!(
+            scanner.next(),
+            Some(Token {
+                kind: TokenType::Var,
+                start: 68,
+                length: 3,
+                line: 1,
+                source
+            })
+        );
+        assert_eq!(
+            scanner.next(),
+            Some(Token {
+                kind: TokenType::While,
+                start: 72,
+                length: 5,
                 line: 1,
                 source
             })
