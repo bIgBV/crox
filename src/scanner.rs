@@ -129,20 +129,15 @@ impl<'source> Scanner<'source> {
     }
 
     fn number(&mut self) -> Token<'source> {
-        while let Some(true) = self.peek().map(|c| c.is_digit(10)) {
+        while self.peek().is_some_and(|c| c.is_digit(10)) {
             self.advance();
         }
 
         // Look for the fractional part
-        if self.peek() == Some('.')
-            && self
-                .peek_next()
-                .map(|c| if c.is_digit(10) { Some(()) } else { None })
-                .is_some()
-        {
+        if self.peek() == Some('.') && self.peek_next().is_some_and(|c| c.is_digit(10)) {
             // Consume the "."
             self.advance();
-            while let Some(true) = self.peek().map(|c| c.is_digit(10)) {
+            while self.peek().is_some_and(|c| c.is_digit(10)) {
                 self.advance();
             }
         }
