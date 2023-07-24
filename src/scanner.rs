@@ -68,20 +68,15 @@ impl<'source> Scanner<'source> {
                     self.line += 1;
                     self.advance();
                 }
-                Some('/') => {
-                    let Some(peek_next) = self.peek_next() else {
-                        return;
-                    };
-
-                    if peek_next == '/' {
+                Some('/') => match self.peek_next() {
+                    Some('/') => {
                         while self.peek() != Some('\n') && !self.is_at_end() {
                             self.advance();
                         }
-                    } else {
-                        // We aren't in a line comment, return
-                        return;
                     }
-                }
+                    // We aren't in a line comment, return without consuming anything
+                    Some(_) | None => return,
+                },
                 _ => break,
             }
         }
