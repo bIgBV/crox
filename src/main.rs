@@ -3,11 +3,6 @@ use tracing::Level;
 
 use tracing_subscriber::FmtSubscriber;
 
-use crate::{
-    chunk::{Chunk, OpCode},
-    vm::Vm,
-};
-
 mod chunk;
 mod compiler;
 mod line_store;

@@ -13,7 +13,7 @@ impl Compiler {
     }
 
     pub fn complie(&self, line: &str) -> Result<Chunk, CompilerError> {
-        let scanner = Scanner::new(line);
+        let scanner = Scanner::init(line);
         todo!()
     }
 }

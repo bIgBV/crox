@@ -10,7 +10,7 @@ pub struct Scanner<'source> {
 }
 
 impl<'source> Scanner<'source> {
-    pub fn new(source: &'source str) -> Self {
+    pub fn init(source: &'source str) -> Self {
         Self {
             start: 0,
             current: 0,
@@ -50,7 +50,7 @@ impl<'source> Scanner<'source> {
     fn match_char(&mut self, expected: char) -> bool {
         if self.is_at_end() {
             false
-        } else if self.current_char() != expected {
+        } else if self.current_char() != Some(expected) {
             false
         } else {
             self.advance();
@@ -61,20 +61,20 @@ impl<'source> Scanner<'source> {
     fn skip_whitespace(&mut self) {
         loop {
             match self.peek() {
-                ' ' | '\t' => {
+                Some(' ') | Some('\t') => {
                     self.advance();
                 }
-                '\n' => {
+                Some('\n') => {
                     self.line += 1;
                     self.advance();
                 }
-                '/' => {
+                Some('/') => {
                     let Some(peek_next) = self.peek_next() else {
                         return;
                     };
 
                     if peek_next == '/' {
-                        while self.peek() != '\n' && !self.is_at_end() {
+                        while self.peek() != Some('\n') && !self.is_at_end() {
                             self.advance();
                         }
                     } else {
@@ -87,7 +87,7 @@ impl<'source> Scanner<'source> {
         }
     }
 
-    fn peek(&mut self) -> char {
+    fn peek(&mut self) -> Option<char> {
         debug_assert!(
             !self.is_at_end(),
             "Called Scanner::peek after we read past the end of the source"
@@ -97,8 +97,8 @@ impl<'source> Scanner<'source> {
         self.current_char()
     }
 
-    fn current_char(&mut self) -> char {
-        self.source.chars().nth(self.current).unwrap()
+    fn current_char(&self) -> Option<char> {
+        self.source.chars().nth(self.current)
     }
 
     fn peek_next(&mut self) -> Option<char> {
@@ -107,6 +107,47 @@ impl<'source> Scanner<'source> {
         } else {
             self.source.chars().nth(self.current + 1)
         }
+    }
+
+    fn string(&mut self) -> Token<'source> {
+        while self.peek() != Some('"') && !self.is_at_end() {
+            if self.peek() == Some('\n') {
+                self.line += 1
+            }
+
+            self.advance();
+        }
+
+        if self.is_at_end() {
+            // TODO: error handling for unterminated string
+        }
+
+        // The closing quote.
+        self.advance();
+
+        self.make_token(TokenType::String)
+    }
+
+    fn number(&mut self) -> Token<'source> {
+        while let Some(true) = self.peek().map(|c| c.is_digit(10)) {
+            self.advance();
+        }
+
+        // Look for the fractional part
+        if self.peek() == Some('.')
+            && self
+                .peek_next()
+                .map(|c| if c.is_digit(10) { Some(()) } else { None })
+                .is_some()
+        {
+            // Consume the "."
+            self.advance();
+            while let Some(true) = self.peek().map(|c| c.is_digit(10)) {
+                self.advance();
+            }
+        }
+
+        self.make_token(TokenType::Number)
     }
 }
 
@@ -119,10 +160,12 @@ impl<'source> Iterator for Scanner<'source> {
         // Advance scanner to the current idx
         self.start = self.current;
 
-        if self.is_at_end() {
-            None
-        } else {
+        if !self.is_at_end() {
             let c = self.advance();
+
+            if c.is_digit(10) {
+                return Some(self.number());
+            }
 
             match c {
                 '(' => Some(self.make_token(TokenType::LeftParen)),
@@ -168,8 +211,11 @@ impl<'source> Iterator for Scanner<'source> {
                     };
                     Some(self.make_token(kind))
                 }
+                '"' => Some(self.string()),
                 _ => Some(self.make_token(TokenType::Error)),
             }
+        } else {
+            None
         }
     }
 }
@@ -246,7 +292,7 @@ mod test {
     fn single_character_tokens() {
         let source = "()!,=><.";
 
-        let mut scanner = Scanner::new(source);
+        let mut scanner = Scanner::init(source);
 
         assert_eq!(
             scanner.next(),
@@ -334,7 +380,7 @@ mod test {
     fn two_character_tokens() {
         let source = "!=<=>===";
 
-        let mut scanner = Scanner::new(source);
+        let mut scanner = Scanner::init(source);
 
         assert_eq!(
             scanner.next(),
@@ -384,7 +430,7 @@ mod test {
 
         >= == = ";
 
-        let mut scanner = Scanner::new(source);
+        let mut scanner = Scanner::init(source);
 
         assert_eq!(
             scanner.next(),
@@ -410,7 +456,7 @@ mod test {
             scanner.next(),
             Some(Token {
                 kind: TokenType::GreaterEqual,
-                start: 26,
+                start: 18,
                 length: 2,
                 line: 3,
                 source
@@ -420,7 +466,7 @@ mod test {
             scanner.next(),
             Some(Token {
                 kind: TokenType::EqualEqual,
-                start: 29,
+                start: 21,
                 length: 2,
                 line: 3,
                 source
@@ -430,9 +476,112 @@ mod test {
             scanner.next(),
             Some(Token {
                 kind: TokenType::Equal,
-                start: 32,
+                start: 24,
                 length: 1,
                 line: 3,
+                source
+            })
+        );
+    }
+
+    #[test]
+    fn test_comments() {
+        let source = "./
+// this should be ignored
+!=";
+
+        let mut scanner = Scanner::init(source);
+        assert_eq!(
+            scanner.next(),
+            Some(Token {
+                kind: TokenType::Dot,
+                start: 0,
+                length: 1,
+                line: 1,
+                source
+            })
+        );
+        assert_eq!(
+            scanner.next(),
+            Some(Token {
+                kind: TokenType::Slash,
+                start: 1,
+                length: 1,
+                line: 1,
+                source
+            })
+        );
+        assert_eq!(
+            scanner.next(),
+            Some(Token {
+                kind: TokenType::BangEqual,
+                start: 29,
+                length: 2,
+                line: 3,
+                source
+            })
+        );
+    }
+
+    #[test]
+    fn test_string() {
+        let source = ".\"Another sting\",";
+        let mut scanner = Scanner::init(source);
+
+        assert_eq!(
+            scanner.next(),
+            Some(Token {
+                kind: TokenType::Dot,
+                start: 0,
+                length: 1,
+                line: 1,
+                source
+            })
+        );
+        assert_eq!(
+            scanner.next(),
+            Some(Token {
+                kind: TokenType::String,
+                start: 1,
+                length: 15,
+                line: 1,
+                source
+            })
+        );
+        assert_eq!(
+            scanner.next(),
+            Some(Token {
+                kind: TokenType::Comma,
+                start: 16,
+                length: 1,
+                line: 1,
+                source
+            })
+        );
+    }
+
+    #[test]
+    fn test_number() {
+        let source = "42.69 1337";
+        let mut scanner = Scanner::init(source);
+
+        assert_eq!(
+            scanner.next(),
+            Some(Token {
+                kind: TokenType::Number,
+                start: 0,
+                length: 5,
+                line: 1,
+                source
+            })
+        );
+        assert_eq!(
+            scanner.next(),
+            Some(Token {
+                kind: TokenType::Number,
+                start: 6,
+                length: 4,
+                line: 1,
                 source
             })
         );
