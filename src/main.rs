@@ -1,4 +1,5 @@
 use anyhow::Result;
+use repl::Repl;
 use tracing::Level;
 
 use tracing_subscriber::FmtSubscriber;
@@ -21,6 +22,8 @@ fn main() -> Result<()> {
         .finish();
 
     tracing::subscriber::set_global_default(subscriber).expect("setting default subscriber failed");
+
+    let _ = Repl::start()?;
 
     Ok(())
 }

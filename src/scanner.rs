@@ -287,9 +287,6 @@ impl<'source> Iterator for Scanner<'source> {
             };
         }
 
-        if token.is_some() {
-            debug!(token=%token.as_ref().unwrap());
-        }
         token
     }
 }
@@ -302,7 +299,7 @@ pub struct Token<'source> {
     kind: TokenType,
     start: usize,
     length: usize,
-    line: usize,
+    pub line: usize,
     source: &'source str,
 }
 

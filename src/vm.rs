@@ -35,7 +35,8 @@ impl Vm {
         let compiler = Compiler::new();
 
         let chunk = compiler.complie(&line)?;
-        self.run_loop(&chunk)?;
+
+        //self.run_loop(&chunk)?;
 
         Ok(())
     }
