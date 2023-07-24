@@ -1,5 +1,8 @@
-use std::{hint, str::Chars};
+use std::{fmt::Display, hint, str::Chars};
 
+use tracing::{debug, instrument, trace};
+
+#[derive(Debug)]
 pub struct Scanner<'source> {
     start: usize,
     current: usize,
@@ -27,26 +30,32 @@ impl<'source> Scanner<'source> {
         self.current > self.source.len() - 1
     }
 
+    #[instrument(skip_all, fields(start = self.start, current = self.current))]
     fn make_token(&self, kind: TokenType) -> Token<'source> {
-        Token {
+        let token = Token {
             kind,
             start: self.start,
             length: self.current - self.start,
             line: self.line,
             source: self.source,
-        }
+        };
+        debug!(%token, "Creating token");
+        token
     }
 
+    #[instrument(skip_all, fields(start = self.start, current = self.current))]
     fn advance(&mut self) -> char {
-        self.current += 1;
         debug_assert!(
             !self.is_at_end(),
             "Called Scanner::advance after we read past the end of the source"
         );
 
+        self.current += 1;
+        trace!("Advancing iterator");
         self.source_iter.next().unwrap()
     }
 
+    #[instrument(skip_all, fields(start = self.start, current = self.current))]
     fn match_char(&mut self, expected: char) -> bool {
         if self.is_at_end() || self.current_char() != Some(expected) {
             false
@@ -56,18 +65,22 @@ impl<'source> Scanner<'source> {
         }
     }
 
+    #[instrument(skip_all, fields(start = self.start, current = self.current))]
     fn skip_whitespace(&mut self) {
         loop {
             match self.peek() {
                 Some(' ') | Some('\t') => {
+                    trace!("Whitespace");
                     self.advance();
                 }
                 Some('\n') => {
+                    trace!("New line!");
                     self.line += 1;
                     self.advance();
                 }
                 Some('/') => match self.peek_next() {
                     Some('/') => {
+                        trace!("Skiping comment");
                         while self.peek() != Some('\n') && !self.is_at_end() {
                             self.advance();
                         }
@@ -80,25 +93,24 @@ impl<'source> Scanner<'source> {
         }
     }
 
+    #[instrument(skip_all, fields(start = self.start, current = self.current))]
     fn peek(&mut self) -> Option<char> {
-        debug_assert!(
-            !self.is_at_end(),
-            "Called Scanner::peek after we read past the end of the source"
-        );
-
         // Linear search getting more and more expenvise everytime. Fine for now?
         self.current_char()
     }
 
+    #[instrument(skip_all, fields(start = self.start, current = self.current))]
     fn current_char(&self) -> Option<char> {
         self.source.chars().nth(self.current)
     }
 
+    #[instrument(skip_all, fields(start = self.start, current = self.current))]
     fn start_char(&self, idx: usize) -> char {
         debug_assert!(self.start < self.current, "Start not less than current");
         self.source.chars().nth(self.start + idx).unwrap()
     }
 
+    #[instrument(skip_all, fields(start = self.start, current = self.current))]
     fn peek_next(&mut self) -> Option<char> {
         if self.is_at_end() {
             None
@@ -107,6 +119,7 @@ impl<'source> Scanner<'source> {
         }
     }
 
+    #[instrument(skip_all, fields(start = self.start, current = self.current))]
     fn string(&mut self) -> Token<'source> {
         while self.peek() != Some('"') && !self.is_at_end() {
             if self.peek() == Some('\n') {
@@ -126,6 +139,7 @@ impl<'source> Scanner<'source> {
         self.make_token(TokenType::String)
     }
 
+    #[instrument(skip_all, fields(start = self.start, current = self.current))]
     fn number(&mut self) -> Token<'source> {
         while self.peek().is_some_and(|c| c.is_ascii_digit()) {
             self.advance();
@@ -143,6 +157,7 @@ impl<'source> Scanner<'source> {
         self.make_token(TokenType::Number)
     }
 
+    #[instrument(skip_all, fields(start = self.start, current = self.current))]
     fn identifier(&mut self) -> Token<'source> {
         while let Some(true) = self.peek().map(|c| c.is_alphanumeric()) {
             self.advance();
@@ -151,6 +166,7 @@ impl<'source> Scanner<'source> {
         self.make_token(self.identifier_type())
     }
 
+    #[instrument]
     fn identifier_type(&self) -> TokenType {
         match self.start_char(0) {
             'a' => self.check_keyword(1, 2, "nd", TokenType::And),
@@ -179,6 +195,7 @@ impl<'source> Scanner<'source> {
         }
     }
 
+    #[instrument]
     fn check_keyword(
         &self,
         start: usize,
@@ -203,12 +220,13 @@ impl<'source> Iterator for Scanner<'source> {
     type Item = Token<'source>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        // Skip whitespace before producing a new token
-        self.skip_whitespace();
-        // Advance scanner to the current idx
-        self.start = self.current;
-
+        debug!("Generating token");
         if !self.is_at_end() {
+            // Skip whitespace before producing a new token
+            self.skip_whitespace();
+            // Advance scanner to the current idx
+            self.start = self.current;
+
             let c = self.advance();
 
             if c.is_alphabetic() {
@@ -284,6 +302,16 @@ pub struct Token<'source> {
     source: &'source str,
 }
 
+impl<'source> Display for Token<'source> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let lexeme = self
+            .source
+            .get(self.start..self.start + self.length)
+            .expect("Unable to get lexeme string slice");
+        write!(f, "{:#}", lexeme)
+    }
+}
+
 impl<'source> Token<'source> {}
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -335,11 +363,60 @@ pub enum TokenType {
     Eof,
 }
 
+impl Display for TokenType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TokenType::LeftParen => write!(f, "{}", "("),
+            TokenType::RightParen => write!(f, "{}", ")"),
+            TokenType::LeftBrace => write!(f, "{}", "{"),
+            TokenType::RightBrace => write!(f, "{}", "}"),
+            TokenType::Comma => write!(f, "{}", ","),
+            TokenType::Dot => write!(f, "{}", "."),
+            TokenType::Minus => write!(f, "{}", "-"),
+            TokenType::Plus => write!(f, "{}", "+"),
+            TokenType::Semicolon => write!(f, "{}", ";"),
+            TokenType::Slash => write!(f, "{}", "/"),
+            TokenType::Star => write!(f, "{}", "*"),
+            TokenType::Bang => write!(f, "{}", "!"),
+            TokenType::BangEqual => write!(f, "{}", "!="),
+            TokenType::Equal => write!(f, "{}", "="),
+            TokenType::EqualEqual => write!(f, "{}", "=="),
+            TokenType::Greater => write!(f, "{}", ">"),
+            TokenType::GreaterEqual => write!(f, "{}", ">="),
+            TokenType::Less => write!(f, "{}", "<"),
+            TokenType::LessEqual => write!(f, "{}", "<="),
+            TokenType::Identifier => write!(f, "{}", ""),
+            TokenType::String => write!(f, "{}", "String"),
+            TokenType::Number => write!(f, "{}", "Number"),
+            TokenType::And => write!(f, "{}", "And"),
+            TokenType::Class => write!(f, "{}", "Class"),
+            TokenType::Else => write!(f, "{}", "Else"),
+            TokenType::False => write!(f, "{}", "False"),
+            TokenType::For => write!(f, "{}", "For"),
+            TokenType::Fun => write!(f, "{}", "Fun"),
+            TokenType::If => write!(f, "{}", "If"),
+            TokenType::Nil => write!(f, "{}", "Nil"),
+            TokenType::Or => write!(f, "{}", "Or"),
+            TokenType::Print => write!(f, "{}", "Print"),
+            TokenType::Return => write!(f, "{}", "Return"),
+            TokenType::Super => write!(f, "{}", "Super"),
+            TokenType::This => write!(f, "{}", "This"),
+            TokenType::True => write!(f, "{}", "True"),
+            TokenType::Var => write!(f, "{}", "Var"),
+            TokenType::While => write!(f, "{}", "While"),
+            TokenType::Error => write!(f, "{}", "Error"),
+            TokenType::Eof => write!(f, "{}", "Eof"),
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
     use pretty_assertions::assert_eq;
+    use tracing_test::traced_test;
 
+    #[traced_test]
     #[test]
     fn test_termination() {
         let source = ".";
@@ -358,6 +435,7 @@ mod test {
         assert_eq!(scanner.next(), None);
     }
 
+    #[traced_test]
     #[test]
     fn single_character_tokens() {
         let source = "()!,=><.";
@@ -443,9 +521,11 @@ mod test {
                 line: 1,
                 source
             })
-        )
+        );
+        assert_eq!(scanner.next(), None);
     }
 
+    #[traced_test]
     #[test]
     fn two_character_tokens() {
         let source = "!=<=>===";
@@ -492,8 +572,11 @@ mod test {
                 source
             })
         );
+
+        assert_eq!(scanner.next(), None);
     }
 
+    #[traced_test]
     #[test]
     fn test_whitespace() {
         let source = "!=    <=
@@ -552,8 +635,11 @@ mod test {
                 source
             })
         );
+
+        assert_eq!(scanner.next(), None);
     }
 
+    #[traced_test]
     #[test]
     fn test_comments() {
         let source = "./
@@ -591,8 +677,11 @@ mod test {
                 source
             })
         );
+
+        assert_eq!(scanner.next(), None);
     }
 
+    #[traced_test]
     #[test]
     fn test_string() {
         let source = ".\"Another sting\",";
@@ -628,8 +717,11 @@ mod test {
                 source
             })
         );
+
+        assert_eq!(scanner.next(), None);
     }
 
+    #[traced_test]
     #[test]
     fn test_number() {
         let source = "42.69 1337";
@@ -655,8 +747,11 @@ mod test {
                 source
             })
         );
+
+        assert_eq!(scanner.next(), None)
     }
 
+    #[traced_test]
     #[test]
     fn test_keywords() {
         let source =
@@ -823,8 +918,11 @@ mod test {
                 source
             })
         );
+
+        assert_eq!(scanner.next(), None);
     }
 
+    #[traced_test]
     #[test]
     fn test_simple_if_expression() {
         let source = "if (5 > 2) { yes } else { false }";
