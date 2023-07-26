@@ -1,7 +1,6 @@
 use anyhow::Result;
 use rustyline::{
     completion::FilenameCompleter,
-    error::ReadlineError,
     highlight::{Highlighter, MatchingBracketHighlighter},
     hint::HistoryHinter,
     validate::MatchingBracketValidator,
@@ -44,7 +43,7 @@ impl Repl {
                 break;
             }
         }
-        rl.append_history("history.txt");
+        rl.append_history("history.txt")?;
 
         Ok(())
     }

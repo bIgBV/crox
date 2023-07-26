@@ -1,4 +1,5 @@
 use anyhow::Result;
+use argh::FromArgs;
 use repl::Repl;
 use tracing::Level;
 
@@ -13,15 +14,28 @@ mod scanner;
 mod value;
 mod vm;
 
-fn main() -> Result<()> {
-    let subscriber = FmtSubscriber::builder()
-        // all spans/events with a level higher than TRACE (e.g, debug, info, warn, etc.)
-        // will be written to stdout.
-        .with_max_level(Level::TRACE)
-        // completes the builder.
-        .finish();
+#[derive(FromArgs)]
+/// Run a clox interpreter
+struct Options {
+    /// enable verbose logging
+    #[argh(switch, short = 'v')]
+    verbose: bool,
+}
 
-    tracing::subscriber::set_global_default(subscriber).expect("setting default subscriber failed");
+fn main() -> Result<()> {
+    let options: Options = argh::from_env();
+
+    if options.verbose {
+        let subscriber = FmtSubscriber::builder()
+            // all spans/events with a level higher than TRACE (e.g, debug, info, warn, etc.)
+            // will be written to stdout.
+            .with_max_level(Level::TRACE)
+            // completes the builder.
+            .finish();
+
+        tracing::subscriber::set_global_default(subscriber)
+            .expect("setting default subscriber failed");
+    }
 
     let _ = Repl::start()?;
 

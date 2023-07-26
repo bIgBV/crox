@@ -2,33 +2,39 @@ use thiserror::Error;
 
 use crate::{
     chunk::Chunk,
-    scanner::{self, Scanner},
+    scanner::{self, Scanner, Token, TokenType},
 };
 
-pub struct Compiler {}
+pub struct Compiler<'source> {
+    previous: Token<'source>,
+    current: Token<'source>,
+}
 
-impl Compiler {
+impl<'source> Compiler<'source> {
     pub fn new() -> Self {
-        Self {}
+        Self {
+            previous: Token::empty(),
+            current: Token::empty(),
+        }
     }
 
-    pub fn complie(&self, source: &str) -> Result<Chunk, CompilerError> {
+    pub fn complie(&self, source: &'source str) -> Result<Chunk, CompilerError> {
         let scanner = Scanner::init(source);
+        let chunk = Chunk::new("another-one");
 
-        let mut line = 0;
+        Ok(chunk)
+    }
+
+    fn advance(&mut self, scanner: &'source mut Scanner) {
+        self.previous = self.current.clone();
 
         for token in scanner {
-            if token.line != line {
-                println!("{:>4}", token.line);
-                line = token.line;
-            } else {
-                println!("   | ");
+            self.current = token;
+
+            if self.current.kind != TokenType::Error {
+                break;
             }
-
-            println!("{:#}", token);
         }
-
-        Ok(Chunk::new("test"))
     }
 }
 

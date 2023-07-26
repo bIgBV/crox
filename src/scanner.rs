@@ -296,9 +296,9 @@ impl<'source> Iterator for Scanner<'source> {
 /// Each token is a span into the source this scanner is initialized with.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct Token<'source> {
-    kind: TokenType,
-    start: usize,
-    length: usize,
+    pub kind: TokenType,
+    pub start: usize,
+    pub length: usize,
     pub line: usize,
     source: &'source str,
 }
@@ -313,7 +313,17 @@ impl<'source> Display for Token<'source> {
     }
 }
 
-impl<'source> Token<'source> {}
+impl<'source> Token<'source> {
+    pub fn empty() -> Self {
+        Token {
+            kind: TokenType::Empty,
+            start: 0,
+            length: 0,
+            line: 1,
+            source: "empty",
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum TokenType {
@@ -361,7 +371,7 @@ pub enum TokenType {
     While,
 
     Error,
-    Eof,
+    Empty,
 }
 
 impl Display for TokenType {
@@ -406,7 +416,7 @@ impl Display for TokenType {
             TokenType::Var => write!(f, "{}", "Var"),
             TokenType::While => write!(f, "{}", "While"),
             TokenType::Error => write!(f, "{}", "Error"),
-            TokenType::Eof => write!(f, "{}", "Eof"),
+            TokenType::Empty => write!(f, "{}", "Empty"),
         }
     }
 }
