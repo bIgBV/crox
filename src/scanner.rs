@@ -443,6 +443,34 @@ mod test {
         }};
     }
 
+    macro_rules! unwrap_assert_err {
+        ($scanner:expr, $err:expr) => {{
+            // Get the Result<Token<'source>, ScanError>
+            let result = $scanner.next().unwrap();
+            assert_eq!(result, Err($err));
+        }};
+    }
+
+    #[traced_test]
+    #[test]
+    fn test_unexpected_character() {
+        let source = "∆";
+        let mut scanner = Scanner::init(source);
+
+        unwrap_assert_err!(scanner, ScanError::UnexpectedCharacter(0));
+        // TODO once error happens, what do we do next?
+        // assert_eq!(scanner.next(), None);
+    }
+
+    #[traced_test]
+    #[test]
+    fn test_unterminated_string() {
+        let source = "\"this is an unterminated string";
+        let mut scanner = Scanner::init(source);
+
+        unwrap_assert_err!(scanner, ScanError::UnterminatedString(0));
+    }
+
     #[traced_test]
     #[test]
     fn test_termination() {
