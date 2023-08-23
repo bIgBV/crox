@@ -293,7 +293,7 @@ impl<'source> Iterator for Scanner<'source> {
                     Some(Ok(self.make_token(kind)))
                 }
                 '"' => Some(self.string()),
-                _ => Some(Ok(self.make_token(TokenType::Error))),
+                _ => Some(Err(ScanError::UnexpectedCharacter(self.start))),
             };
         }
 
@@ -380,7 +380,6 @@ pub enum TokenType {
     Var,
     While,
 
-    Error,
     Empty,
 }
 
@@ -425,7 +424,6 @@ impl Display for TokenType {
             TokenType::True => write!(f, "{}", "True"),
             TokenType::Var => write!(f, "{}", "Var"),
             TokenType::While => write!(f, "{}", "While"),
-            TokenType::Error => write!(f, "{}", "Error"),
             TokenType::Empty => write!(f, "{}", "Empty"),
         }
     }
