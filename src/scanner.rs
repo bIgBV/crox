@@ -1,5 +1,6 @@
 use std::{fmt::Display, hint, str::Chars};
 
+use thiserror::Error;
 use tracing::{debug, instrument, trace};
 
 #[derive(Debug)]
@@ -120,7 +121,7 @@ impl<'source> Scanner<'source> {
     }
 
     #[instrument(skip_all, fields(start = self.start, current = self.current))]
-    fn string(&mut self) -> Token<'source> {
+    fn string(&mut self) -> Result<Token<'source>, ScanError> {
         while self.peek() != Some('"') && !self.is_at_end() {
             if self.peek() == Some('\n') {
                 self.line += 1
@@ -130,13 +131,13 @@ impl<'source> Scanner<'source> {
         }
 
         if self.is_at_end() {
-            // TODO: error handling for unterminated string
+            return Err(ScanError::UnterminatedString(self.start));
         }
 
         // The closing quote.
         self.advance();
 
-        self.make_token(TokenType::String)
+        Ok(self.make_token(TokenType::String))
     }
 
     #[instrument(skip_all, fields(start = self.start, current = self.current))]
@@ -216,8 +217,17 @@ impl<'source> Scanner<'source> {
     }
 }
 
+#[derive(Debug, Error, Clone, PartialEq, Copy, Eq)]
+pub enum ScanError {
+    #[error("Unexpected charecter at {0}")]
+    UnexpectedCharacter(usize),
+
+    #[error("Unterminated string encountered starting at {0}")]
+    UnterminatedString(usize),
+}
+
 impl<'source> Iterator for Scanner<'source> {
-    type Item = Token<'source>;
+    type Item = Result<Token<'source>, ScanError>;
 
     fn next(&mut self) -> Option<Self::Item> {
         // Skip whitespace before producing a new token
@@ -231,32 +241,32 @@ impl<'source> Iterator for Scanner<'source> {
             let c = self.advance();
 
             if c.is_alphabetic() {
-                return Some(self.identifier());
+                return Some(Ok(self.identifier()));
             }
 
             if c.is_ascii_digit() {
-                return Some(self.number());
+                return Some(Ok(self.number()));
             }
 
             token = match c {
-                '(' => Some(self.make_token(TokenType::LeftParen)),
-                ')' => Some(self.make_token(TokenType::RightParen)),
-                '{' => Some(self.make_token(TokenType::LeftBrace)),
-                '}' => Some(self.make_token(TokenType::RightBrace)),
-                ';' => Some(self.make_token(TokenType::Semicolon)),
-                ',' => Some(self.make_token(TokenType::Comma)),
-                '.' => Some(self.make_token(TokenType::Dot)),
-                '-' => Some(self.make_token(TokenType::Minus)),
-                '+' => Some(self.make_token(TokenType::Plus)),
-                '/' => Some(self.make_token(TokenType::Slash)),
-                '*' => Some(self.make_token(TokenType::Star)),
+                '(' => Some(Ok(self.make_token(TokenType::LeftParen))),
+                ')' => Some(Ok(self.make_token(TokenType::RightParen))),
+                '{' => Some(Ok(self.make_token(TokenType::LeftBrace))),
+                '}' => Some(Ok(self.make_token(TokenType::RightBrace))),
+                ';' => Some(Ok(self.make_token(TokenType::Semicolon))),
+                ',' => Some(Ok(self.make_token(TokenType::Comma))),
+                '.' => Some(Ok(self.make_token(TokenType::Dot))),
+                '-' => Some(Ok(self.make_token(TokenType::Minus))),
+                '+' => Some(Ok(self.make_token(TokenType::Plus))),
+                '/' => Some(Ok(self.make_token(TokenType::Slash))),
+                '*' => Some(Ok(self.make_token(TokenType::Star))),
                 '!' => {
                     let kind = if self.match_char('=') {
                         TokenType::BangEqual
                     } else {
                         TokenType::Bang
                     };
-                    Some(self.make_token(kind))
+                    Some(Ok(self.make_token(kind)))
                 }
                 '=' => {
                     let kind = if self.match_char('=') {
@@ -264,7 +274,7 @@ impl<'source> Iterator for Scanner<'source> {
                     } else {
                         TokenType::Equal
                     };
-                    Some(self.make_token(kind))
+                    Some(Ok(self.make_token(kind)))
                 }
                 '<' => {
                     let kind = if self.match_char('=') {
@@ -272,7 +282,7 @@ impl<'source> Iterator for Scanner<'source> {
                     } else {
                         TokenType::Less
                     };
-                    Some(self.make_token(kind))
+                    Some(Ok(self.make_token(kind)))
                 }
                 '>' => {
                     let kind = if self.match_char('=') {
@@ -280,10 +290,10 @@ impl<'source> Iterator for Scanner<'source> {
                     } else {
                         TokenType::Greater
                     };
-                    Some(self.make_token(kind))
+                    Some(Ok(self.make_token(kind)))
                 }
                 '"' => Some(self.string()),
-                _ => Some(self.make_token(TokenType::Error)),
+                _ => Some(Ok(self.make_token(TokenType::Error))),
             };
         }
 
@@ -427,22 +437,31 @@ mod test {
     use pretty_assertions::assert_eq;
     use tracing_test::traced_test;
 
+    macro_rules! unwrap_assert_ok {
+        ($scanner:expr, $token:expr) => {{
+            // Get the Result<Token<'source>, ScanError>
+            let result = $scanner.next().unwrap();
+            assert_eq!(result, Ok($token));
+        }};
+    }
+
     #[traced_test]
     #[test]
     fn test_termination() {
         let source = ".";
         let mut scanner = Scanner::init(source);
 
-        assert_eq!(
-            scanner.next(),
-            Some(Token {
+        unwrap_assert_ok!(
+            scanner,
+            Token {
                 kind: TokenType::Dot,
                 start: 0,
                 length: 1,
                 line: 1,
                 source
-            })
+            }
         );
+
         assert_eq!(scanner.next(), None);
     }
 
@@ -453,85 +472,85 @@ mod test {
 
         let mut scanner = Scanner::init(source);
 
-        assert_eq!(
-            scanner.next(),
-            Some(Token {
+        unwrap_assert_ok!(
+            scanner,
+            Token {
                 kind: TokenType::LeftParen,
                 start: 0,
                 length: 1,
                 line: 1,
                 source
-            })
+            }
         );
-        assert_eq!(
-            scanner.next(),
-            Some(Token {
+        unwrap_assert_ok!(
+            scanner,
+            Token {
                 kind: TokenType::RightParen,
                 start: 1,
                 length: 1,
                 line: 1,
                 source
-            })
+            }
         );
-        assert_eq!(
-            scanner.next(),
-            Some(Token {
+        unwrap_assert_ok!(
+            scanner,
+            Token {
                 kind: TokenType::Bang,
                 start: 2,
                 length: 1,
                 line: 1,
                 source
-            })
+            }
         );
-        assert_eq!(
-            scanner.next(),
-            Some(Token {
+        unwrap_assert_ok!(
+            scanner,
+            Token {
                 kind: TokenType::Comma,
                 start: 3,
                 length: 1,
                 line: 1,
                 source
-            })
+            }
         );
-        assert_eq!(
-            scanner.next(),
-            Some(Token {
+        unwrap_assert_ok!(
+            scanner,
+            Token {
                 kind: TokenType::Equal,
                 start: 4,
                 length: 1,
                 line: 1,
                 source
-            })
+            }
         );
-        assert_eq!(
-            scanner.next(),
-            Some(Token {
+        unwrap_assert_ok!(
+            scanner,
+            Token {
                 kind: TokenType::Greater,
                 start: 5,
                 length: 1,
                 line: 1,
                 source
-            })
+            }
         );
-        assert_eq!(
-            scanner.next(),
-            Some(Token {
+        unwrap_assert_ok!(
+            scanner,
+            Token {
                 kind: TokenType::Less,
                 start: 6,
                 length: 1,
                 line: 1,
                 source
-            })
+            }
         );
-        assert_eq!(
-            scanner.next(),
-            Some(Token {
+        unwrap_assert_ok!(
+            scanner,
+            Token {
                 kind: TokenType::Dot,
                 start: 7,
                 length: 1,
                 line: 1,
                 source
-            })
+            }
         );
         assert_eq!(scanner.next(), None);
     }
@@ -543,45 +562,45 @@ mod test {
 
         let mut scanner = Scanner::init(source);
 
-        assert_eq!(
-            scanner.next(),
-            Some(Token {
+        unwrap_assert_ok!(
+            scanner,
+            Token {
                 kind: TokenType::BangEqual,
                 start: 0,
                 length: 2,
                 line: 1,
                 source
-            })
+            }
         );
-        assert_eq!(
-            scanner.next(),
-            Some(Token {
+        unwrap_assert_ok!(
+            scanner,
+            Token {
                 kind: TokenType::LessEqual,
                 start: 2,
                 length: 2,
                 line: 1,
                 source
-            })
+            }
         );
-        assert_eq!(
-            scanner.next(),
-            Some(Token {
+        unwrap_assert_ok!(
+            scanner,
+            Token {
                 kind: TokenType::GreaterEqual,
                 start: 4,
                 length: 2,
                 line: 1,
                 source
-            })
+            }
         );
-        assert_eq!(
-            scanner.next(),
-            Some(Token {
+        unwrap_assert_ok!(
+            scanner,
+            Token {
                 kind: TokenType::EqualEqual,
                 start: 6,
                 length: 2,
                 line: 1,
                 source
-            })
+            }
         );
 
         assert_eq!(scanner.next(), None);
@@ -596,55 +615,55 @@ mod test {
 
         let mut scanner = Scanner::init(source);
 
-        assert_eq!(
-            scanner.next(),
-            Some(Token {
+        unwrap_assert_ok!(
+            scanner,
+            Token {
                 kind: TokenType::BangEqual,
                 start: 0,
                 length: 2,
                 line: 1,
                 source
-            })
+            }
         );
-        assert_eq!(
-            scanner.next(),
-            Some(Token {
+        unwrap_assert_ok!(
+            scanner,
+            Token {
                 kind: TokenType::LessEqual,
                 start: 6,
                 length: 2,
                 line: 1,
                 source
-            })
+            }
         );
-        assert_eq!(
-            scanner.next(),
-            Some(Token {
+        unwrap_assert_ok!(
+            scanner,
+            Token {
                 kind: TokenType::GreaterEqual,
                 start: 18,
                 length: 2,
                 line: 3,
                 source
-            })
+            }
         );
-        assert_eq!(
-            scanner.next(),
-            Some(Token {
+        unwrap_assert_ok!(
+            scanner,
+            Token {
                 kind: TokenType::EqualEqual,
                 start: 21,
                 length: 2,
                 line: 3,
                 source
-            })
+            }
         );
-        assert_eq!(
-            scanner.next(),
-            Some(Token {
+        unwrap_assert_ok!(
+            scanner,
+            Token {
                 kind: TokenType::Equal,
                 start: 24,
                 length: 1,
                 line: 3,
                 source
-            })
+            }
         );
 
         assert_eq!(scanner.next(), None);
@@ -658,35 +677,35 @@ mod test {
 !=";
 
         let mut scanner = Scanner::init(source);
-        assert_eq!(
-            scanner.next(),
-            Some(Token {
+        unwrap_assert_ok!(
+            scanner,
+            Token {
                 kind: TokenType::Dot,
                 start: 0,
                 length: 1,
                 line: 1,
                 source
-            })
+            }
         );
-        assert_eq!(
-            scanner.next(),
-            Some(Token {
+        unwrap_assert_ok!(
+            scanner,
+            Token {
                 kind: TokenType::Slash,
                 start: 1,
                 length: 1,
                 line: 1,
                 source
-            })
+            }
         );
-        assert_eq!(
-            scanner.next(),
-            Some(Token {
+        unwrap_assert_ok!(
+            scanner,
+            Token {
                 kind: TokenType::BangEqual,
                 start: 29,
                 length: 2,
                 line: 3,
                 source
-            })
+            }
         );
 
         assert_eq!(scanner.next(), None);
@@ -698,35 +717,35 @@ mod test {
         let source = ".\"Another sting\",";
         let mut scanner = Scanner::init(source);
 
-        assert_eq!(
-            scanner.next(),
-            Some(Token {
+        unwrap_assert_ok!(
+            scanner,
+            Token {
                 kind: TokenType::Dot,
                 start: 0,
                 length: 1,
                 line: 1,
                 source
-            })
+            }
         );
-        assert_eq!(
-            scanner.next(),
-            Some(Token {
+        unwrap_assert_ok!(
+            scanner,
+            Token {
                 kind: TokenType::String,
                 start: 1,
                 length: 15,
                 line: 1,
                 source
-            })
+            }
         );
-        assert_eq!(
-            scanner.next(),
-            Some(Token {
+        unwrap_assert_ok!(
+            scanner,
+            Token {
                 kind: TokenType::Comma,
                 start: 16,
                 length: 1,
                 line: 1,
                 source
-            })
+            }
         );
 
         assert_eq!(scanner.next(), None);
@@ -738,25 +757,25 @@ mod test {
         let source = "42.69 1337";
         let mut scanner = Scanner::init(source);
 
-        assert_eq!(
-            scanner.next(),
-            Some(Token {
+        unwrap_assert_ok!(
+            scanner,
+            Token {
                 kind: TokenType::Number,
                 start: 0,
                 length: 5,
                 line: 1,
                 source
-            })
+            }
         );
-        assert_eq!(
-            scanner.next(),
-            Some(Token {
+        unwrap_assert_ok!(
+            scanner,
+            Token {
                 kind: TokenType::Number,
                 start: 6,
                 length: 4,
                 line: 1,
                 source
-            })
+            }
         );
 
         assert_eq!(scanner.next(), None)
@@ -769,165 +788,165 @@ mod test {
             "and class else false for fun if nil or print return super this true var while";
         let mut scanner = Scanner::init(source);
 
-        assert_eq!(
-            scanner.next(),
-            Some(Token {
+        unwrap_assert_ok!(
+            scanner,
+            Token {
                 kind: TokenType::And,
                 start: 0,
                 length: 3,
                 line: 1,
                 source
-            })
+            }
         );
-        assert_eq!(
-            scanner.next(),
-            Some(Token {
+        unwrap_assert_ok!(
+            scanner,
+            Token {
                 kind: TokenType::Class,
                 start: 4,
                 length: 5,
                 line: 1,
                 source
-            })
+            }
         );
-        assert_eq!(
-            scanner.next(),
-            Some(Token {
+        unwrap_assert_ok!(
+            scanner,
+            Token {
                 kind: TokenType::Else,
                 start: 10,
                 length: 4,
                 line: 1,
                 source
-            })
+            }
         );
-        assert_eq!(
-            scanner.next(),
-            Some(Token {
+        unwrap_assert_ok!(
+            scanner,
+            Token {
                 kind: TokenType::False,
                 start: 15,
                 length: 5,
                 line: 1,
                 source
-            })
+            }
         );
-        assert_eq!(
-            scanner.next(),
-            Some(Token {
+        unwrap_assert_ok!(
+            scanner,
+            Token {
                 kind: TokenType::For,
                 start: 21,
                 length: 3,
                 line: 1,
                 source
-            })
+            }
         );
-        assert_eq!(
-            scanner.next(),
-            Some(Token {
+        unwrap_assert_ok!(
+            scanner,
+            Token {
                 kind: TokenType::Fun,
                 start: 25,
                 length: 3,
                 line: 1,
                 source
-            })
+            }
         );
-        assert_eq!(
-            scanner.next(),
-            Some(Token {
+        unwrap_assert_ok!(
+            scanner,
+            Token {
                 kind: TokenType::If,
                 start: 29,
                 length: 2,
                 line: 1,
                 source
-            })
+            }
         );
-        assert_eq!(
-            scanner.next(),
-            Some(Token {
+        unwrap_assert_ok!(
+            scanner,
+            Token {
                 kind: TokenType::Nil,
                 start: 32,
                 length: 3,
                 line: 1,
                 source
-            })
+            }
         );
-        assert_eq!(
-            scanner.next(),
-            Some(Token {
+        unwrap_assert_ok!(
+            scanner,
+            Token {
                 kind: TokenType::Or,
                 start: 36,
                 length: 2,
                 line: 1,
                 source
-            })
+            }
         );
-        assert_eq!(
-            scanner.next(),
-            Some(Token {
+        unwrap_assert_ok!(
+            scanner,
+            Token {
                 kind: TokenType::Print,
                 start: 39,
                 length: 5,
                 line: 1,
                 source
-            })
+            }
         );
-        assert_eq!(
-            scanner.next(),
-            Some(Token {
+        unwrap_assert_ok!(
+            scanner,
+            Token {
                 kind: TokenType::Return,
                 start: 45,
                 length: 6,
                 line: 1,
                 source
-            })
+            }
         );
-        assert_eq!(
-            scanner.next(),
-            Some(Token {
+        unwrap_assert_ok!(
+            scanner,
+            Token {
                 kind: TokenType::Super,
                 start: 52,
                 length: 5,
                 line: 1,
                 source
-            })
+            }
         );
-        assert_eq!(
-            scanner.next(),
-            Some(Token {
+        unwrap_assert_ok!(
+            scanner,
+            Token {
                 kind: TokenType::This,
                 start: 58,
                 length: 4,
                 line: 1,
                 source
-            })
+            }
         );
-        assert_eq!(
-            scanner.next(),
-            Some(Token {
+        unwrap_assert_ok!(
+            scanner,
+            Token {
                 kind: TokenType::True,
                 start: 63,
                 length: 4,
                 line: 1,
                 source
-            })
+            }
         );
-        assert_eq!(
-            scanner.next(),
-            Some(Token {
+        unwrap_assert_ok!(
+            scanner,
+            Token {
                 kind: TokenType::Var,
                 start: 68,
                 length: 3,
                 line: 1,
                 source
-            })
+            }
         );
-        assert_eq!(
-            scanner.next(),
-            Some(Token {
+        unwrap_assert_ok!(
+            scanner,
+            Token {
                 kind: TokenType::While,
                 start: 72,
                 length: 5,
                 line: 1,
                 source
-            })
+            }
         );
 
         assert_eq!(scanner.next(), None);
@@ -939,135 +958,135 @@ mod test {
         let source = "if (5 > 2) { yes } else { false }";
         let mut scanner = Scanner::init(source);
 
-        assert_eq!(
-            scanner.next(),
-            Some(Token {
+        unwrap_assert_ok!(
+            scanner,
+            Token {
                 kind: TokenType::If,
                 start: 0,
                 length: 2,
                 line: 1,
                 source
-            })
+            }
         );
-        assert_eq!(
-            scanner.next(),
-            Some(Token {
+        unwrap_assert_ok!(
+            scanner,
+            Token {
                 kind: TokenType::LeftParen,
                 start: 3,
                 length: 1,
                 line: 1,
                 source
-            })
+            }
         );
-        assert_eq!(
-            scanner.next(),
-            Some(Token {
+        unwrap_assert_ok!(
+            scanner,
+            Token {
                 kind: TokenType::Number,
                 start: 4,
                 length: 1,
                 line: 1,
                 source
-            })
+            }
         );
-        assert_eq!(
-            scanner.next(),
-            Some(Token {
+        unwrap_assert_ok!(
+            scanner,
+            Token {
                 kind: TokenType::Greater,
                 start: 6,
                 length: 1,
                 line: 1,
                 source
-            })
+            }
         );
-        assert_eq!(
-            scanner.next(),
-            Some(Token {
+        unwrap_assert_ok!(
+            scanner,
+            Token {
                 kind: TokenType::Number,
                 start: 8,
                 length: 1,
                 line: 1,
                 source
-            })
+            }
         );
-        assert_eq!(
-            scanner.next(),
-            Some(Token {
+        unwrap_assert_ok!(
+            scanner,
+            Token {
                 kind: TokenType::RightParen,
                 start: 9,
                 length: 1,
                 line: 1,
                 source
-            })
+            }
         );
-        assert_eq!(
-            scanner.next(),
-            Some(Token {
+        unwrap_assert_ok!(
+            scanner,
+            Token {
                 kind: TokenType::LeftBrace,
                 start: 11,
                 length: 1,
                 line: 1,
                 source
-            })
+            }
         );
-        assert_eq!(
-            scanner.next(),
-            Some(Token {
+        unwrap_assert_ok!(
+            scanner,
+            Token {
                 kind: TokenType::Identifier,
                 start: 13,
                 length: 3,
                 line: 1,
                 source
-            })
+            }
         );
-        assert_eq!(
-            scanner.next(),
-            Some(Token {
+        unwrap_assert_ok!(
+            scanner,
+            Token {
                 kind: TokenType::RightBrace,
                 start: 17,
                 length: 1,
                 line: 1,
                 source
-            })
+            }
         );
-        assert_eq!(
-            scanner.next(),
-            Some(Token {
+        unwrap_assert_ok!(
+            scanner,
+            Token {
                 kind: TokenType::Else,
                 start: 19,
                 length: 4,
                 line: 1,
                 source
-            })
+            }
         );
-        assert_eq!(
-            scanner.next(),
-            Some(Token {
+        unwrap_assert_ok!(
+            scanner,
+            Token {
                 kind: TokenType::LeftBrace,
                 start: 24,
                 length: 1,
                 line: 1,
                 source
-            })
+            }
         );
-        assert_eq!(
-            scanner.next(),
-            Some(Token {
+        unwrap_assert_ok!(
+            scanner,
+            Token {
                 kind: TokenType::False,
                 start: 26,
                 length: 5,
                 line: 1,
                 source
-            })
+            }
         );
-        assert_eq!(
-            scanner.next(),
-            Some(Token {
+        unwrap_assert_ok!(
+            scanner,
+            Token {
                 kind: TokenType::RightBrace,
                 start: 32,
                 length: 1,
                 line: 1,
                 source
-            })
+            }
         );
 
         assert_eq!(scanner.next(), None);

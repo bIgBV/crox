@@ -2,7 +2,7 @@ use thiserror::Error;
 
 use crate::{
     chunk::Chunk,
-    scanner::{self, Scanner, Token, TokenType},
+    scanner::{self, ScanError, Scanner, Token, TokenType},
 };
 
 pub struct Compiler<'source> {
@@ -25,18 +25,19 @@ impl<'source> Compiler<'source> {
         Ok(chunk)
     }
 
-    fn advance(&mut self, scanner: &'source mut Scanner) {
+    fn advance(&mut self, scanner: &'source mut Scanner) -> Result<(), CompilerError> {
         self.previous = self.current.clone();
 
         for token in scanner {
-            self.current = token;
-
-            if self.current.kind != TokenType::Error {
-                break;
-            }
+            self.current = token?;
         }
+
+        Ok(())
     }
 }
 
 #[derive(Debug, Error)]
-pub enum CompilerError {}
+pub enum CompilerError {
+    #[error("Encountered a scanner error: {0}")]
+    Scanner(#[from] ScanError),
+}
