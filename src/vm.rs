@@ -33,7 +33,7 @@ impl Vm {
 
     #[instrument]
     pub fn interpret(&self, line: String) -> Result<(), VmError> {
-        let compiler = Compiler::new();
+        let mut compiler = Compiler::new();
         let chunk = compiler.complie(&line)?;
         self.run_loop(&chunk)?;
 

@@ -1,4 +1,5 @@
-use anyhow::Result;
+use anyhow::{Error, Result};
+use miette::{Diagnostic, EyreContext, MietteHandlerOpts};
 use rustyline::{
     completion::FilenameCompleter,
     highlight::{Highlighter, MatchingBracketHighlighter},
@@ -6,9 +7,13 @@ use rustyline::{
     validate::MatchingBracketValidator,
     Completer, CompletionType, Config, EditMode, Editor, Helper, Hinter, Validator,
 };
+use thiserror::Error;
 
-use crate::{chunk::Chunk, vm::Vm};
-use std::borrow::Cow::{self, Borrowed, Owned};
+use crate::vm::Vm;
+use std::{
+    borrow::Cow::{self, Borrowed, Owned},
+    sync::Arc,
+};
 
 pub struct Repl {}
 
@@ -84,5 +89,66 @@ impl Highlighter for MyHelper {
 
     fn highlight_char(&self, line: &str, pos: usize) -> bool {
         self.highlighter.highlight_char(line, pos)
+    }
+}
+
+pub fn report_error(source: &str, error: &(dyn miette::Diagnostic + Send + Sync + 'static)) {
+    eprintln!("{:?}", ErrorReporter(error, source));
+}
+
+#[derive(Error)]
+#[error("{0}")]
+pub struct ErrorReporter<'source>(
+    pub &'source (dyn miette::Diagnostic + Send + Sync + 'static),
+    pub &'source str,
+);
+
+impl<'error> std::fmt::Debug for ErrorReporter<'error> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let miette_handler = MietteHandlerOpts::new().color(true).unicode(true).build();
+
+        // Ignore error to prevent format! panics. This can happen if the source code is pointing to the wrong location
+        let _ = miette_handler.debug(self, f);
+
+        Ok(())
+    }
+}
+
+impl<'error> Diagnostic for ErrorReporter<'error> {
+    fn code<'a>(&'a self) -> Option<Box<dyn std::fmt::Display + 'a>> {
+        self.0.code()
+    }
+
+    fn severity(&self) -> Option<miette::Severity> {
+        self.0.severity()
+    }
+
+    fn help<'a>(&'a self) -> Option<Box<dyn std::fmt::Display + 'a>> {
+        self.0.help()
+    }
+
+    fn url<'a>(&'a self) -> Option<Box<dyn std::fmt::Display + 'a>> {
+        self.0.url()
+    }
+
+    fn source_code(&self) -> Option<&dyn miette::SourceCode> {
+        // This is where we provide the source code if it isn't already available
+        if let Some(source_code) = self.0.source_code() {
+            Some(source_code)
+        } else {
+            Some(&self.1)
+        }
+    }
+
+    fn labels(&self) -> Option<Box<dyn Iterator<Item = miette::LabeledSpan> + '_>> {
+        None
+    }
+
+    fn related<'a>(&'a self) -> Option<Box<dyn Iterator<Item = &'a dyn Diagnostic> + 'a>> {
+        None
+    }
+
+    fn diagnostic_source(&self) -> Option<&dyn Diagnostic> {
+        None
     }
 }

@@ -1,5 +1,6 @@
-use std::{fmt::Display, hint, str::Chars};
+use std::{fmt::Display, str::Chars};
 
+use miette::Diagnostic;
 use thiserror::Error;
 use tracing::{debug, instrument, trace};
 
@@ -217,13 +218,21 @@ impl<'source> Scanner<'source> {
     }
 }
 
-#[derive(Debug, Error, Clone, PartialEq, Copy, Eq)]
+#[derive(Debug, Error, Clone, PartialEq, Copy, Eq, Diagnostic)]
 pub enum ScanError {
     #[error("Unexpected charecter at {0}")]
     UnexpectedCharacter(usize),
 
     #[error("Unterminated string encountered starting at {0}")]
     UnterminatedString(usize),
+}
+
+impl ScanError {
+    pub fn loc(&self) -> usize {
+        match self {
+            ScanError::UnexpectedCharacter(loc) | ScanError::UnterminatedString(loc) => *loc,
+        }
+    }
 }
 
 impl<'source> Iterator for Scanner<'source> {
