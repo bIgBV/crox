@@ -1,34 +1,36 @@
+use std::sync::RwLock;
+
 use crate::memory::Offset;
 
 #[derive(Debug)]
 pub struct LineStore {
-    spans: Vec<Span>,
+    spans: RwLock<Vec<Span>>,
 }
 
 impl LineStore {
     pub fn new() -> Self {
-        Self { spans: Vec::new() }
-    }
-
-    pub fn add_byte(&mut self, line: usize) {
-        if let Some(idx) = self.find_line(line) {
-            let mut span = &mut self.spans[idx];
-            span.count += 1
-        } else {
-            let span = Span { line, count: 1 };
-
-            self.spans.push(span);
+        Self {
+            spans: RwLock::new(Vec::new()),
         }
     }
 
-    pub fn add_bytes(&mut self, line: usize, count: usize) {
+    pub fn add_byte(&self, line: usize) {
         if let Some(idx) = self.find_line(line) {
-            let mut span = &mut self.spans[idx];
+            let span = &mut self.spans.write().unwrap()[idx];
+            span.count += 1
+        } else {
+            let span = Span { line, count: 1 };
+            self.spans.write().unwrap().push(span);
+        }
+    }
+
+    pub fn add_bytes(&self, line: usize, count: usize) {
+        if let Some(idx) = self.find_line(line) {
+            let span = &mut self.spans.write().unwrap()[idx];
             span.count += count;
         } else {
             let span = Span { line, count };
-
-            self.spans.push(span);
+            self.spans.write().unwrap().push(span);
         }
     }
 
@@ -37,7 +39,7 @@ impl LineStore {
         let mut sum: usize = 0;
         // TODO: This can be optimized. This is currently going to be an n^2 algo
         // because of how it's called.
-        for span in &self.spans {
+        for span in &*self.spans.read().unwrap() {
             if (sum..sum + span.count).contains(&byte_offset.0) {
                 return Some(span.line);
             }
@@ -49,6 +51,8 @@ impl LineStore {
 
     fn find_line(&self, line: usize) -> Option<usize> {
         self.spans
+            .read()
+            .unwrap()
             .binary_search_by(|span| span.line.cmp(&line))
             .ok()
     }
@@ -70,7 +74,7 @@ mod test {
 
     #[test]
     fn insert_byte_range() {
-        let mut store = LineStore::new();
+        let store = LineStore::new();
 
         for chunk in (0..356).collect::<Vec<usize>>().chunks(14) {
             for i in chunk {
@@ -92,7 +96,7 @@ mod test {
 
     #[test]
     fn add_bytes() {
-        let mut store = LineStore::new();
+        let store = LineStore::new();
         let mut lines = Vec::new();
 
         let byte_slices = (0..356).collect::<Vec<usize>>();

@@ -392,6 +392,54 @@ pub enum TokenType {
     Empty,
 }
 
+impl From<TokenType> for usize {
+    fn from(value: TokenType) -> Self {
+        match value {
+            TokenType::LeftParen => 0,
+            TokenType::RightParen => 1,
+            TokenType::LeftBrace => 2,
+            TokenType::RightBrace => 3,
+            TokenType::Comma => 4,
+            TokenType::Dot => 5,
+            TokenType::Minus => 6,
+            TokenType::Plus => 7,
+            TokenType::Semicolon => 8,
+            TokenType::Slash => 9,
+            TokenType::Star => 10,
+            TokenType::Bang => 11,
+            TokenType::BangEqual => 12,
+            TokenType::Equal => 13,
+            TokenType::EqualEqual => 14,
+            TokenType::Greater => 15,
+            TokenType::GreaterEqual => 16,
+            TokenType::Less => 17,
+            TokenType::LessEqual => 18,
+            TokenType::Identifier => 19,
+            TokenType::String => 20,
+            TokenType::Number => 21,
+            TokenType::And => 22,
+            TokenType::Class => 23,
+            TokenType::Else => 24,
+            TokenType::False => 25,
+            TokenType::For => 26,
+            TokenType::Fun => 27,
+            TokenType::If => 28,
+            TokenType::Nil => 29,
+            TokenType::Or => 30,
+            TokenType::Print => 31,
+            TokenType::Return => 32,
+            TokenType::Super => 33,
+            TokenType::This => 34,
+            TokenType::True => 35,
+            TokenType::Var => 36,
+            TokenType::While => 37,
+            TokenType::Empty => {
+                unreachable!("Empty token is only used during parser initialization")
+            }
+        }
+    }
+}
+
 impl Display for TokenType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {

@@ -8,7 +8,7 @@ use thiserror::Error;
 use tracing::{debug, error, instrument};
 
 use crate::chunk::ChunkError;
-use crate::compiler::{Compiler, CompilerError};
+use crate::compiler::{compile, Compiler, CompilerError};
 use crate::value::Value;
 use crate::{
     chunk::{Chunk, OpCode},
@@ -33,8 +33,7 @@ impl Vm {
 
     #[instrument]
     pub fn interpret(&self, line: String) -> Result<(), VmError> {
-        let mut compiler = Compiler::new();
-        let chunk = compiler.complie(&line)?;
+        let chunk = compile(&line)?;
         self.run_loop(&chunk)?;
 
         Ok(())
@@ -42,7 +41,7 @@ impl Vm {
 
     fn run_loop(&self, chunk: &Chunk) -> Result<(), VmError> {
         // TODO: Is Relaxed ordering here ok if we are AcqRel within the loop itself?
-        while self.ip.load(Ordering::Relaxed) < chunk.code.len() {
+        while self.ip.load(Ordering::Relaxed) < chunk.code.read().unwrap().len() {
             let instruction = self.read_byte(chunk);
             debug!(instruction = ?instruction, stack = %self.dump_stack(chunk));
 
@@ -78,7 +77,7 @@ impl Vm {
         // TODO: This might fail as we load the IP using Ordering::Relaxed, and another thread might
         // have gotten updated the IP to the end of the chunk before us.
         // How do you handle this?
-        chunk.code[self.ip.fetch_add(1, Ordering::AcqRel)].into()
+        chunk.code.read().unwrap()[self.ip.fetch_add(1, Ordering::AcqRel)].into()
     }
 
     #[instrument]
@@ -88,7 +87,7 @@ impl Vm {
     {
         let ip = self.ip.load(Ordering::Acquire);
         let instruction = ip + T::SIZE;
-        let val = T::read_from(&chunk.code[ip..instruction]);
+        let val = T::read_from(&chunk.code.read().unwrap()[ip..instruction]);
         self.ip.store(instruction, Ordering::Release);
 
         val

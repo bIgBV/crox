@@ -1,6 +1,9 @@
 use std::{
     fmt::Display,
-    sync::atomic::{AtomicUsize, Ordering},
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Mutex, RwLock,
+    },
 };
 
 use anyhow::Context;
@@ -18,7 +21,8 @@ use crate::{
 pub struct Chunk {
     name: &'static str,
     values: Values,
-    pub code: Vec<u8>,
+    // Big fat lock for now
+    pub code: RwLock<Vec<u8>>,
     lines: LineStore,
 }
 
@@ -70,20 +74,20 @@ impl Chunk {
         Chunk {
             name,
             values: Values::new(),
-            code: Vec::new(),
+            code: RwLock::new(Vec::new()),
             lines: LineStore::new(),
         }
     }
 
     /// Write a single opcode into the bytestream and associate it with a line
     /// from the source code.
-    pub fn write(&mut self, byte: OpCode, line: usize) {
-        self.code.push(byte as u8);
+    pub fn write(&self, byte: OpCode, line: usize) {
+        self.code.write().unwrap().push(byte as u8);
         self.lines.add_byte(line);
     }
 
     /// Write a constant to the bytestream.
-    pub fn write_constant(&mut self, constant: f64, line: usize) -> Result<(), ChunkError> {
+    pub fn write_constant(&self, constant: f64, line: usize) -> Result<(), ChunkError> {
         let offset = self.values.add_constant(Value(constant))?;
         self.write(OpCode::Constant, line);
         self.write_bytes(offset.as_bytes(), line);
@@ -98,8 +102,8 @@ impl Chunk {
         self.values.add_constant(value).map_err(|err| err.into())
     }
 
-    fn write_bytes(&mut self, bytes: &[u8], line: usize) {
-        self.code.extend_from_slice(bytes);
+    fn write_bytes(&self, bytes: &[u8], line: usize) {
+        self.code.write().unwrap().extend_from_slice(bytes);
         self.lines.add_bytes(line, bytes.len());
     }
 }
@@ -141,7 +145,7 @@ impl<'chunk> ChunkFormatter<'chunk> {
     pub fn format(&self, buffer: &mut String) -> anyhow::Result<()> {
         let mut offset = 0;
 
-        while offset < self.chunk.code.len() {
+        while offset < self.chunk.code.read().unwrap().len() {
             let byte_offset = Offset(offset);
             let src_line = self
                 .chunk
@@ -151,7 +155,7 @@ impl<'chunk> ChunkFormatter<'chunk> {
 
             self.current_line.store(src_line, Ordering::Release);
 
-            offset = match self.chunk.code[offset] {
+            offset = match self.chunk.code.read().unwrap()[offset] {
                 0 => self
                     .simple_instruction(buffer, "OP_RETURN", offset, src_line)
                     .with_context(|| {
@@ -202,8 +206,9 @@ impl<'chunk> ChunkFormatter<'chunk> {
         buffer.push_str(&format!(" {}", op_name));
 
         let idx_offset = offset + 1;
-        let parsed_offset =
-            Offset::read_from(&self.chunk.code[idx_offset..idx_offset + Offset::SIZE]);
+        let parsed_offset = Offset::read_from(
+            &self.chunk.code.read().unwrap()[idx_offset..idx_offset + Offset::SIZE],
+        );
 
         if let Some(idx) = parsed_offset {
             let val = self
