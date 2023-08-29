@@ -1,11 +1,15 @@
 use std::{
     cell::OnceCell,
     num::ParseFloatError,
-    sync::{OnceLock, RwLock},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        OnceLock, RwLock,
+    },
 };
 
 use miette::Diagnostic;
 use thiserror::Error;
+use tracing::instrument;
 
 use crate::{
     chunk::{Chunk, ChunkError, OpCode},
@@ -13,12 +17,13 @@ use crate::{
     scanner::{ScanError, Scanner, Token, TokenType},
 };
 
+#[derive(Debug)]
 struct Parser<'source> {
     previous: Token<'source>,
     current: Token<'source>,
     scanner: RwLock<Scanner<'source>>,
     source: OnceCell<&'source str>,
-    had_error: bool,
+    had_error: AtomicBool,
 }
 
 impl<'source> Parser<'source> {
@@ -28,7 +33,7 @@ impl<'source> Parser<'source> {
             current: Token::empty(),
             scanner: RwLock::new(Scanner::init("")),
             source: OnceCell::new(),
-            had_error: false,
+            had_error: AtomicBool::new(false),
         }
     }
 
@@ -46,10 +51,17 @@ impl<'source> Parser<'source> {
         self.previous = self.current.clone();
 
         for token in &mut *self.scanner.write().unwrap() {
-            if token.is_ok() {
-                break;
+            match token {
+                Ok(token) => {
+                    self.current = token;
+                    break;
+                }
+                Err(err) => {
+                    self.handle_error(CompilerError::Scanner(err));
+                }
             }
         }
+
         Ok(())
     }
 
@@ -65,15 +77,16 @@ impl<'source> Parser<'source> {
         }
     }
 
-    fn handle_error(&mut self, error: CompilerError) {
+    fn handle_error(&self, error: CompilerError) {
         // Only report the first error
-        if !self.had_error {
+        if !self.had_error.load(Ordering::Relaxed) {
             report_error(self.source(), &error);
-            self.had_error = true;
+            self.had_error.store(true, Ordering::Relaxed);
         }
     }
 }
 
+#[instrument(skip(source))]
 pub fn compile(source: &str) -> Result<Chunk, CompilerError> {
     // Store the source before begining compilation.
     let mut parser = Parser::new();
@@ -84,7 +97,8 @@ pub fn compile(source: &str) -> Result<Chunk, CompilerError> {
     if let Err(error) = parser.advance() {
         parser.handle_error(error);
     }
-    //self.expression()?;
+
+    expression(&mut parser, &mut chunk)?;
 
     end_compiler(&parser, &mut chunk);
     // TODO how to surface the fact that there was an error _after_ finishing parsing the source?
@@ -103,6 +117,7 @@ fn emit_byte(parser: &Parser, chunk: &Chunk, opcode: OpCode) {
 // parser internally manages from the lifetime of the references to the parser
 // itself.  Both the parser and the chunk are instantiated in the `compile`
 // method so they can share the same lifetime.
+#[instrument(skip_all, fields(previous = %parser.previous.kind, current = %parser.current.kind))]
 fn expression<'compile, 'source>(
     parser: &'compile mut Parser<'source>,
     chunk: &'compile mut Chunk,
@@ -113,6 +128,7 @@ fn expression<'compile, 'source>(
     Ok(())
 }
 
+#[instrument(skip_all, fields(previous = %parser.previous.kind, current = %parser.current.kind))]
 fn number<'compile, 'source>(
     parser: &'compile mut Parser<'source>,
     chunk: &'compile mut Chunk,
@@ -128,6 +144,7 @@ fn number<'compile, 'source>(
     Ok(())
 }
 
+#[instrument(skip_all, fields(previous = %parser.previous.kind, current = %parser.current.kind))]
 fn grouping<'compile, 'source>(
     parser: &'compile mut Parser<'source>,
     chunk: &'compile mut Chunk,
@@ -141,6 +158,7 @@ fn grouping<'compile, 'source>(
 
 // We evaluate the operand first which leaves its value on the stack.
 // Then we pop that value, negate it, and push the result.
+#[instrument(skip_all, fields(previous = %parser.previous.kind, current = %parser.current.kind))]
 fn unary<'compile, 'source>(
     parser: &'compile mut Parser<'source>,
     chunk: &'compile mut Chunk,
@@ -158,6 +176,7 @@ fn unary<'compile, 'source>(
     Ok(())
 }
 
+#[instrument(skip_all, fields(previous = %parser.previous.kind, current = %parser.current.kind))]
 fn binary<'compile, 'source>(
     parser: &'compile mut Parser<'source>,
     chunk: &'compile mut Chunk,
@@ -179,12 +198,31 @@ fn binary<'compile, 'source>(
     Ok(())
 }
 
+#[instrument(skip(parser, chunk), fields(previous = %parser.previous.kind, current = %parser.current.kind))]
 fn parse_precedence<'compile, 'source>(
-    parser: &'compile Parser<'source>,
+    parser: &'compile mut Parser<'source>,
     precedence: Precedence,
-    chunk: &Chunk,
+    chunk: &'compile mut Chunk,
 ) -> Result<(), CompilerError> {
-    todo!()
+    // Advance so we consume the token.
+    parser.advance()?;
+    let Some(prefix) = parse_rule(parser.previous.kind).prefix else {
+        return Err(CompilerError::NoPrefixFn(parser.previous.kind));
+    };
+
+    prefix(parser, chunk)?;
+
+    while precedence as u8 <= parse_rule(parser.current.kind).precedence as u8 {
+        // advance the parser so we consume the infix operator
+        parser.advance()?;
+        let Some(infix) = parse_rule(parser.previous.kind).infix else {
+            return Err(CompilerError::NoInfixFn(parser.previous.kind));
+        };
+
+        infix(parser, chunk)?;
+    }
+
+    Ok(())
 }
 
 /// The main parser dispatch table.
@@ -292,6 +330,12 @@ pub enum CompilerError {
 
     #[error(transparent)]
     Conversion(#[from] Serialization),
+
+    #[error("Expected Infix mapping for {0}")]
+    NoInfixFn(TokenType),
+
+    #[error("Expected Prefix mapping for {0}")]
+    NoPrefixFn(TokenType),
 }
 
 #[derive(Error, Debug, Diagnostic)]
