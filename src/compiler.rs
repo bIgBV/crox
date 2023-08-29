@@ -1,26 +1,17 @@
 use std::{
     cell::OnceCell,
     num::ParseFloatError,
-    sync::{Arc, OnceLock, RwLock},
+    sync::{OnceLock, RwLock},
 };
 
-use arc_swap::{access::Access, ArcSwap, ArcSwapOption};
 use miette::Diagnostic;
-use scc::HashMap;
 use thiserror::Error;
 
 use crate::{
-    chunk::{self, Chunk, ChunkError, OpCode},
+    chunk::{Chunk, ChunkError, OpCode},
     repl::report_error,
     scanner::{ScanError, Scanner, Token, TokenType},
-    value::Value,
 };
-
-pub struct Compiler<'source> {
-    parser: Parser<'source>,
-    source: ArcSwap<String>,
-    pub had_error: bool,
-}
 
 struct Parser<'source> {
     previous: Token<'source>,
@@ -198,8 +189,22 @@ fn parse_precedence<'compile, 'source>(
 
 /// The main parser dispatch table.
 ///
-/// This table contains a
+/// This table contains an array of [Compiler::ParseRule]s ordered by TokenType
+/// The ordering occurs based on the `From<TokenType> for usize` implementation
+/// which allows us to seemlessly index into the array.
 static PARSE_RULES: OnceLock<[ParseRule; 38]> = OnceLock::new();
+
+/// A function pointer to a compiler function.
+type ParseFn =
+    Option<for<'a, 'b> fn(&'a mut Parser<'b>, &'a mut Chunk) -> Result<(), CompilerError>>;
+
+/// A grouping of parsing functions for a given token type along with it's associated precedence
+#[derive(Debug)]
+struct ParseRule {
+    prefix: ParseFn,
+    infix: ParseFn,
+    precedence: Precedence,
+}
 
 #[rustfmt::skip]
 fn parse_rule(operator: TokenType) -> &'static ParseRule {
@@ -247,18 +252,6 @@ fn parse_rule(operator: TokenType) -> &'static ParseRule {
     });
 
     &PARSE_RULES.get().unwrap()[operator as usize]
-}
-
-/// A function pointer to a compiler function.
-type ParseFn =
-    Option<for<'a, 'b> fn(&'a mut Parser<'b>, &'a mut Chunk) -> Result<(), CompilerError>>;
-
-/// A grouping of parsing functions for a given token type along with it's associated precedence
-#[derive(Debug)]
-struct ParseRule {
-    prefix: ParseFn,
-    infix: ParseFn,
-    precedence: Precedence,
 }
 
 /// These are all of Lox’s precedence levels in order from lowest to highest.

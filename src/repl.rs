@@ -1,4 +1,4 @@
-use anyhow::{Error, Result};
+use anyhow::Result;
 use miette::{Diagnostic, EyreContext, MietteHandlerOpts};
 use rustyline::{
     completion::FilenameCompleter,
@@ -10,10 +10,7 @@ use rustyline::{
 use thiserror::Error;
 
 use crate::vm::Vm;
-use std::{
-    borrow::Cow::{self, Borrowed, Owned},
-    sync::Arc,
-};
+use std::borrow::Cow::{self, Borrowed, Owned};
 
 pub struct Repl {}
 

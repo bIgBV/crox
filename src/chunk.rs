@@ -2,7 +2,7 @@ use std::{
     fmt::Display,
     sync::{
         atomic::{AtomicUsize, Ordering},
-        Mutex, RwLock,
+        RwLock,
     },
 };
 

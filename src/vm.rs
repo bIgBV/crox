@@ -8,7 +8,7 @@ use thiserror::Error;
 use tracing::{debug, error, instrument};
 
 use crate::chunk::ChunkError;
-use crate::compiler::{compile, Compiler, CompilerError};
+use crate::compiler::{compile, CompilerError};
 use crate::value::Value;
 use crate::{
     chunk::{Chunk, OpCode},
