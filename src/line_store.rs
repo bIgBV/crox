@@ -1,5 +1,7 @@
 use std::sync::RwLock;
 
+use miette::SourceSpan;
+
 use crate::memory::Offset;
 
 #[derive(Debug)]

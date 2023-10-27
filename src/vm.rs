@@ -4,12 +4,14 @@ use std::sync::{
     RwLock,
 };
 
+use miette::{Diagnostic, SourceSpan};
 use thiserror::Error;
 use tracing::{debug, error, instrument};
 
 use crate::chunk::ChunkError;
 use crate::compiler::{compile, CompilerError};
-use crate::value::Value;
+use crate::line_store::Span;
+use crate::value::{Value, ValueKind};
 use crate::{
     chunk::{Chunk, OpCode},
     memory::{Instruction, Offset},
@@ -39,6 +41,7 @@ impl Vm {
         Ok(())
     }
 
+    #[instrument(skip_all)]
     fn run_loop(&self, chunk: &Chunk) -> Result<(), VmError> {
         // TODO: Is Relaxed ordering here ok if we are AcqRel within the loop itself?
         while self.ip.load(Ordering::Relaxed) < chunk.code.read().unwrap().len() {
@@ -49,6 +52,7 @@ impl Vm {
                 OpCode::Return => {
                     let value = chunk.get_value(&self.pop())?;
                     debug!(%value);
+                    println!("{:#}", value);
                     return Ok(());
                 }
                 OpCode::Constant => {
@@ -59,15 +63,34 @@ impl Vm {
                     self.push(value_offset);
                 }
                 OpCode::Negate => {
+                    self.peek_with(0, |offset| {
+                        let value = chunk.get_value(offset)?;
+                        if !value.is_number() {
+                            return Err(VmError::OperatorMismatch {
+                                op_span: SourceSpan::new(0.into(), 5.into()),
+                                lhs_ty: String::from("value"),
+                                lhs_span: SourceSpan::new(0.into(), 10.into()),
+                                rhs_ty: String::from("value"),
+                                rhs_span: SourceSpan::new(0.into(), 19.into()),
+                            });
+                        }
+                        Ok(())
+                    })?;
                     let value = chunk.get_value(&self.pop())?;
-                    self.push(chunk.add_value(Value(-value.0)).unwrap());
+                    self.push(chunk.add_value(-value).unwrap());
                 }
                 OpCode::Add => self.binary_op(OpCode::Add, chunk)?,
                 OpCode::Subtract => self.binary_op(OpCode::Subtract, chunk)?,
                 OpCode::Multiply => self.binary_op(OpCode::Multiply, chunk)?,
                 OpCode::Divide => self.binary_op(OpCode::Divide, chunk)?,
+                OpCode::Nil => self.push(chunk.add_value(Value(ValueKind::Nil))?),
+                OpCode::False => self.push(chunk.add_value(Value(ValueKind::Bool(false)))?),
+                OpCode::True => self.push(chunk.add_value(Value(ValueKind::Bool(true)))?),
             }
         }
+
+        self.stack.write().unwrap().clear();
+        self.ip.store(0, Ordering::Release);
 
         Ok(())
     }
@@ -94,6 +117,33 @@ impl Vm {
     }
 
     fn binary_op(&self, op: OpCode, chunk: &Chunk) -> Result<(), VmError> {
+        self.peek_with(0, |offset| {
+            let value = chunk.get_value(offset)?;
+            if !value.is_number() {
+                return Err(VmError::OperatorMismatch {
+                    op_span: SourceSpan::new(0.into(), 5.into()),
+                    lhs_ty: String::from("value"),
+                    lhs_span: SourceSpan::new(0.into(), 10.into()),
+                    rhs_ty: String::from("value"),
+                    rhs_span: SourceSpan::new(0.into(), 19.into()),
+                });
+            }
+            Ok(())
+        })?;
+        self.peek_with(1, |offset| {
+            let value = chunk.get_value(offset)?;
+            if !value.is_number() {
+                return Err(VmError::OperatorMismatch {
+                    op_span: SourceSpan::new(0.into(), 5.into()),
+                    lhs_ty: String::from("value"),
+                    lhs_span: SourceSpan::new(0.into(), 10.into()),
+                    rhs_ty: String::from("value"),
+                    rhs_span: SourceSpan::new(0.into(), 19.into()),
+                });
+            }
+            Ok(())
+        })?;
+
         let b = chunk.get_value(&self.pop())?;
         let a = chunk.get_value(&self.pop())?;
 
@@ -113,7 +163,6 @@ impl Vm {
         (*self.stack.write().unwrap()).push(value_offset);
     }
 
-    #[instrument]
     fn pop(&self) -> Offset {
         debug_assert!(
             self.stack.read().unwrap().len() >= 1,
@@ -121,6 +170,28 @@ impl Vm {
         );
 
         (*self.stack.write().unwrap()).pop().unwrap()
+    }
+
+    /// Peeks into the stack and validates whether it with the predicate while
+    /// holding the read lock on the stack
+    fn peek_with<F>(&self, distance: usize, type_check: F) -> Result<(), VmError>
+    where
+        F: FnOnce(&Offset) -> Result<(), VmError>,
+    {
+        debug_assert!(
+            self.stack.read().unwrap().len() >= 1,
+            "Peeking into the stack without any items"
+        );
+
+        let lock_guard = self.stack.read().unwrap();
+        let offset = lock_guard
+            .iter()
+            .rev()
+            .skip(distance)
+            .next()
+            .expect("we confirmed that items were present");
+
+        type_check(offset)
     }
 
     fn dump_stack(&self, chunk: &Chunk) -> String {
@@ -137,13 +208,23 @@ impl Vm {
 }
 
 // TODO we need to be using miette here
-#[derive(Debug, Error)]
+#[derive(Debug, Error, Diagnostic)]
 pub enum VmError {
     #[error("Compiler error: {0}")]
     Compile(#[from] CompilerError),
 
-    #[error("Runtime error")]
-    Runtime,
+    #[error("Type mismatch during operation")]
+    #[diagnostic(help("Incorrect type for operator"))]
+    OperatorMismatch {
+        #[label = "type mismatch for operator"]
+        op_span: SourceSpan,
+        lhs_ty: String,
+        #[label("{lhs_ty}")]
+        lhs_span: SourceSpan,
+        rhs_ty: String,
+        #[label("{rhs_ty}")]
+        rhs_span: SourceSpan,
+    },
 
     #[error("Error with value store: {0}")]
     ChunkError(#[from] ChunkError),

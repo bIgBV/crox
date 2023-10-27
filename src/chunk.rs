@@ -43,15 +43,21 @@ pub enum OpCode {
     /// run out of memory long before then
     Constant = 1,
 
-    Add = 2,
+    Nil = 2,
 
-    Subtract = 3,
+    True = 3,
 
-    Multiply = 4,
+    False = 4,
 
-    Divide = 5,
+    Add = 5,
 
-    Negate = 6,
+    Subtract = 6,
+
+    Multiply = 7,
+
+    Divide = 8,
+
+    Negate = 9,
 }
 
 impl From<u8> for OpCode {
@@ -88,7 +94,9 @@ impl Chunk {
 
     /// Write a constant to the bytestream.
     pub fn write_constant(&self, constant: f64, line: usize) -> Result<(), ChunkError> {
-        let offset = self.values.add_constant(Value(constant))?;
+        let offset = self
+            .values
+            .add_constant(Value(crate::value::ValueKind::Number(constant)))?;
         self.write(OpCode::Constant, line);
         self.write_bytes(offset.as_bytes(), line);
         Ok(())

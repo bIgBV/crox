@@ -1,5 +1,6 @@
 use std::{
     cell::OnceCell,
+    fmt::Display,
     num::ParseFloatError,
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -9,7 +10,7 @@ use std::{
 
 use miette::Diagnostic;
 use thiserror::Error;
-use tracing::instrument;
+use tracing::{debug, instrument};
 
 use crate::{
     chunk::{Chunk, ChunkError, OpCode},
@@ -181,6 +182,7 @@ fn binary<'compile, 'source>(
     parser: &'compile mut Parser<'source>,
     chunk: &'compile mut Chunk,
 ) -> Result<(), CompilerError> {
+    debug!("Parsing binary operator");
     let operator = parser.previous.kind;
     let rule = parse_rule(operator);
 
@@ -198,12 +200,29 @@ fn binary<'compile, 'source>(
     Ok(())
 }
 
+#[instrument(skip_all, fields(previous = %parser.previous.kind, current = %parser.current.kind))]
+fn literal<'compile, 'source>(
+    parser: &'compile mut Parser<'source>,
+    chunk: &'compile mut Chunk,
+) -> Result<(), CompilerError> {
+    debug!("Parsing literal");
+    match parser.previous.kind {
+        TokenType::False => emit_byte(parser, chunk, OpCode::False),
+        TokenType::True => emit_byte(parser, chunk, OpCode::True),
+        TokenType::Nil => emit_byte(parser, chunk, OpCode::Nil),
+        _ => unreachable!("No other literal possible"),
+    };
+
+    Ok(())
+}
+
 #[instrument(skip(parser, chunk), fields(previous = %parser.previous.kind, current = %parser.current.kind))]
 fn parse_precedence<'compile, 'source>(
     parser: &'compile mut Parser<'source>,
     precedence: Precedence,
     chunk: &'compile mut Chunk,
 ) -> Result<(), CompilerError> {
+    debug!(%precedence, "Parsing with precedence");
     // Advance so we consume the token.
     parser.advance()?;
     let Some(prefix) = parse_rule(parser.previous.kind).prefix else {
@@ -273,17 +292,17 @@ fn parse_rule(operator: TokenType) -> &'static ParseRule {
             ParseRule { prefix: None,           infix: None,         precedence: Precedence::None }, // TokenType::And
             ParseRule { prefix: None,           infix: None,         precedence: Precedence::None }, // TokenType::Class
             ParseRule { prefix: None,           infix: None,         precedence: Precedence::None }, // TokenType::Else
-            ParseRule { prefix: None,           infix: None,         precedence: Precedence::None }, // TokenType::False
+            ParseRule { prefix: Some(literal),  infix: None,         precedence: Precedence::None }, // TokenType::False
             ParseRule { prefix: None,           infix: None,         precedence: Precedence::None }, // TokenType::For
             ParseRule { prefix: None,           infix: None,         precedence: Precedence::None }, // TokenType::Fun
             ParseRule { prefix: None,           infix: None,         precedence: Precedence::None }, // TokenType::If
-            ParseRule { prefix: None,           infix: None,         precedence: Precedence::None }, // TokenType::Nil
+            ParseRule { prefix: Some(literal),  infix: None,         precedence: Precedence::None }, // TokenType::Nil
             ParseRule { prefix: None,           infix: None,         precedence: Precedence::None }, // TokenType::Or
             ParseRule { prefix: None,           infix: None,         precedence: Precedence::None }, // TokenType::Print
             ParseRule { prefix: None,           infix: None,         precedence: Precedence::None }, // TokenType::Return
             ParseRule { prefix: None,           infix: None,         precedence: Precedence::None }, // TokenType::Super
             ParseRule { prefix: None,           infix: None,         precedence: Precedence::None }, // TokenType::This
-            ParseRule { prefix: None,           infix: None,         precedence: Precedence::None }, // TokenType::True
+            ParseRule { prefix: Some(literal),  infix: None,         precedence: Precedence::None }, // TokenType::True
             ParseRule { prefix: None,           infix: None,         precedence: Precedence::None }, // TokenType::Var
             ParseRule { prefix: None,           infix: None,         precedence: Precedence::None }, // TokenType::While
         ]
@@ -314,6 +333,24 @@ pub enum Precedence {
     Unary,      // ! -
     Call,       // . ()
     Primary,
+}
+
+impl Display for Precedence {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Precedence::None => write!(f, "None {}", 0),
+            Precedence::Assignment => write!(f, "= {}", 1),
+            Precedence::Or => write!(f, "|| {}", 2),
+            Precedence::And => write!(f, "&& {}", 3),
+            Precedence::Eq => write!(f, "Eq {}", 4),
+            Precedence::Comp => write!(f, "Comp {}", 5),
+            Precedence::Term => write!(f, "Term {}", 6),
+            Precedence::Factor => write!(f, "Factor {}", 7),
+            Precedence::Unary => write!(f, "Unary {}", 8),
+            Precedence::Call => write!(f, "Call {}", 9),
+            Precedence::Primary => write!(f, "Primary {}", 10),
+        }
+    }
 }
 
 #[derive(Error, Debug, Diagnostic)]
