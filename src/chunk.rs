@@ -129,8 +129,8 @@ impl Chunk {
         self.values.get(*offset).map_err(|err| err.into())
     }
 
-    pub fn take_value(&self, offset: &Offset) -> Result<Value<'_>, ChunkError> {
-        self.values.take(*offset).map_err(Into::into)
+    pub fn take_value(&self, offset: Offset) -> Result<Value<'_>, ChunkError> {
+        self.values.take(offset).map_err(Into::into)
     }
 
     pub fn add_value(&self, value: Value) -> Result<Offset, ChunkError> {

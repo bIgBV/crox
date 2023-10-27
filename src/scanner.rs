@@ -319,7 +319,7 @@ pub struct Token<'source> {
     pub start: usize,
     pub length: usize,
     pub line: usize,
-    source: &'source str,
+    pub source: &'source str,
 }
 
 impl<'source> Display for Token<'source> {

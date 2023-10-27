@@ -137,8 +137,21 @@ impl<'a> Value<'a> {
         Value::Owned(ValueKind::Number(num))
     }
 
+    pub fn new_string<S>(str: S) -> Self
+    where
+        S: Into<String>,
+    {
+        Value::Owned(ValueKind::Obj(Object {
+            kind: ObjectKind::String(str.into()),
+        }))
+    }
+
     pub fn is_number(&self) -> bool {
         self.as_ref().is_number()
+    }
+
+    pub fn is_string(&self) -> bool {
+        self.as_ref().is_string()
     }
 
     /// Lox follows Ruby in that nil and false are falsey and every other value
@@ -147,12 +160,8 @@ impl<'a> Value<'a> {
         self.as_ref().is_falsey()
     }
 
-    pub fn value_type(&self) -> &'static str {
+    pub fn value_type(&self) -> ValueType {
         self.as_ref().value_type()
-    }
-
-    pub fn is_entry(&self) -> bool {
-        matches!(self, Value::Entry(_))
     }
 
     pub fn kind(self) -> Option<ValueKind> {
@@ -171,6 +180,13 @@ impl ValueKind {
         }
     }
 
+    pub fn is_string(&self) -> bool {
+        match self {
+            ValueKind::Obj(obj) => obj.is_string(),
+            _ => false,
+        }
+    }
+
     /// Lox follows Ruby in that nil and false are falsey and every other value
     /// behaves like true.
     pub fn is_falsey(&self) -> bool {
@@ -181,12 +197,32 @@ impl ValueKind {
         }
     }
 
-    pub fn value_type(&self) -> &'static str {
+    pub fn value_type(&self) -> ValueType {
         match self {
-            ValueKind::Bool(_) => "bool",
-            ValueKind::Nil => "nil",
-            ValueKind::Number(_) => "number",
-            ValueKind::Obj(_) => "object",
+            ValueKind::Bool(_) => ValueType::Bool,
+            ValueKind::Nil => ValueType::Nil,
+            ValueKind::Number(_) => ValueType::Num,
+            ValueKind::Obj(_) => ValueType::Obj,
+        }
+    }
+}
+
+/// Enumeration of possible types a Lox [`Value`] can take
+#[derive(Debug)]
+pub enum ValueType {
+    Bool,
+    Nil,
+    Num,
+    Obj,
+}
+
+impl Display for ValueType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ValueType::Bool => write!(f, "{}", "bool"),
+            ValueType::Nil => write!(f, "{}", "nil"),
+            ValueType::Num => write!(f, "{}", "num"),
+            ValueType::Obj => write!(f, "{}", "obj"),
         }
     }
 }
@@ -208,12 +244,21 @@ pub enum ValueKind {
     Bool(bool),
     Number(f64),
     Nil,
-    Obj(Box<Object>),
+    Obj(Object),
 }
 
 #[derive(Debug, Clone, PartialEq, PartialOrd)]
 pub struct Object {
     kind: ObjectKind,
+}
+
+impl Object {
+    fn is_string(&self) -> bool {
+        match self.kind {
+            ObjectKind::String(_) => true,
+            _ => false,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, PartialOrd)]

@@ -5,11 +5,11 @@ use std::sync::{
 };
 
 use thiserror::Error;
-use tracing::{debug, error, instrument};
+use tracing::{debug, error, instrument, trace};
 
 use crate::chunk::ChunkError;
 use crate::compiler::{compile, CompilerError};
-use crate::value::{Value, ValueKind};
+use crate::value::{Value, ValueKind, ValueType};
 use crate::{
     chunk::{Chunk, OpCode},
     memory::{Instruction, Offset},
@@ -48,7 +48,7 @@ impl Vm {
 
             match instruction {
                 OpCode::Return => {
-                    let value = chunk.take_value(&self.pop())?;
+                    let value = chunk.take_value(self.pop())?;
                     debug!(%value);
                     println!("{:#}", value);
                     return Ok(());
@@ -60,27 +60,14 @@ impl Vm {
 
                     self.push(value_offset);
                 }
-                OpCode::Negate => {
-                    self.peek_with(0, |offset| {
-                        let value = chunk.get_value(offset)?;
-                        if !value.is_number() {
-                            return Err(VmError::UnaryOperatorMismatch {
-                                op: format!("{}", instruction),
-                                right_ty: value.value_type().to_string(),
-                            });
-                        }
-                        Ok(())
-                    })?;
-                    let value = chunk.take_value(&self.pop())?;
-                    self.push(chunk.add_value(-value).unwrap());
-                }
-                OpCode::Add => self.binary_op(OpCode::Add, chunk)?,
+                OpCode::Negate => self.op_neg(chunk, instruction)?,
+                OpCode::Add => self.op_add(chunk)?,
                 OpCode::Subtract => self.binary_op(OpCode::Subtract, chunk)?,
                 OpCode::Multiply => self.binary_op(OpCode::Multiply, chunk)?,
                 OpCode::Divide => self.binary_op(OpCode::Divide, chunk)?,
                 OpCode::Not => {
                     // Take ownership of the value
-                    let updated_value = chunk.take_value(&self.pop())?.is_falsey().into();
+                    let updated_value = chunk.take_value(self.pop())?.is_falsey().into();
                     self.push(chunk.add_value(updated_value)?)
                 }
                 OpCode::Nil => self.push(chunk.add_value(Value::new_nil())?),
@@ -121,6 +108,52 @@ impl Vm {
         val
     }
 
+    #[instrument(skip_all)]
+    fn op_add(&self, chunk: &Chunk) -> Result<(), VmError> {
+        let value_type = self.peek_with_bin(0, 1, |first, second| {
+            let first = chunk.get_value(first)?;
+            let second = chunk.get_value(second)?;
+
+            if first.is_string() && second.is_string() {
+                Ok(ValueType::Obj)
+            } else if first.is_number() && second.is_number() {
+                Ok(ValueType::Num)
+            } else {
+                Err(operator_error(
+                    &format!("{}", OpCode::Add),
+                    first.value_type(),
+                    second.value_type(),
+                ))
+            }
+        })?;
+
+        match value_type {
+            ValueType::Obj => todo!(),
+            _ => self.binary_op(OpCode::Add, chunk)?,
+        };
+
+        Ok(())
+    }
+
+    #[instrument(skip_all)]
+    fn op_neg(&self, chunk: &Chunk, opcode: OpCode) -> Result<(), VmError> {
+        trace!("Executing OpCode::Neg");
+        self.peek_with(0, |offset| {
+            let value = chunk.get_value(offset)?;
+            if !value.is_number() {
+                return Err(VmError::UnaryOperatorMismatch {
+                    op: format!("{}", opcode),
+                    right_ty: value.value_type().to_string(),
+                });
+            }
+            Ok(())
+        })?;
+        let value = chunk.take_value(self.pop())?;
+        self.push(chunk.add_value(-value).unwrap());
+
+        Ok(())
+    }
+
     #[instrument(skip(self, chunk))]
     fn binary_op(&self, op: OpCode, chunk: &Chunk) -> Result<(), VmError> {
         self.peek_with_bin(0, 1, |first, second| {
@@ -134,12 +167,13 @@ impl Vm {
                     second.value_type(),
                 ));
             }
-            Ok(())
+
+            Ok(ValueType::Num)
         })?;
 
         // Ensure we take ownership of the value here.
-        let b = chunk.take_value(&self.pop())?;
-        let a = chunk.take_value(&self.pop())?;
+        let b = chunk.take_value(self.pop())?;
+        let a = chunk.take_value(self.pop())?;
 
         let result = match op {
             OpCode::Add => b + a,
@@ -192,9 +226,9 @@ impl Vm {
         check(offset)
     }
 
-    fn peek_with_bin<F>(&self, first: usize, second: usize, check: F) -> Result<(), VmError>
+    fn peek_with_bin<F>(&self, first: usize, second: usize, check: F) -> Result<ValueType, VmError>
     where
-        F: FnOnce(&Offset, &Offset) -> Result<(), VmError>,
+        F: FnOnce(&Offset, &Offset) -> Result<ValueType, VmError>,
     {
         debug_assert!(
             self.stack.read().unwrap().len() >= 1,
@@ -240,8 +274,8 @@ pub enum VmError {
     #[error("Type mismatch during operation: {op} Left: {left_ty} Right: {right_ty}")]
     OperatorMismatch {
         op: String,
-        left_ty: String,
-        right_ty: String,
+        left_ty: ValueType,
+        right_ty: ValueType,
     },
 
     #[error("Type mismatch during operation: {op} Right: {right_ty}")]
@@ -251,11 +285,11 @@ pub enum VmError {
     ChunkError(#[from] ChunkError),
 }
 
-fn operator_error(op: &str, left_ty: &str, right_ty: &str) -> VmError {
+fn operator_error(op: &str, left_ty: ValueType, right_ty: ValueType) -> VmError {
     VmError::OperatorMismatch {
         op: op.to_string(),
-        left_ty: left_ty.to_string(),
-        right_ty: right_ty.to_string(),
+        left_ty,
+        right_ty,
     }
 }
 
