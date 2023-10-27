@@ -1,12 +1,10 @@
 use std::sync::RwLock;
 
-use miette::SourceSpan;
-
 use crate::memory::Offset;
 
 #[derive(Debug)]
 pub struct LineStore {
-    spans: RwLock<Vec<Span>>,
+    spans: RwLock<Vec<Line>>,
 }
 
 impl LineStore {
@@ -21,7 +19,7 @@ impl LineStore {
             let span = &mut self.spans.write().unwrap()[idx];
             span.count += 1
         } else {
-            let span = Span { line, count: 1 };
+            let span = Line { line, count: 1 };
             self.spans.write().unwrap().push(span);
         }
     }
@@ -31,7 +29,7 @@ impl LineStore {
             let span = &mut self.spans.write().unwrap()[idx];
             span.count += count;
         } else {
-            let span = Span { line, count };
+            let span = Line { line, count };
             self.spans.write().unwrap().push(span);
         }
     }
@@ -62,7 +60,7 @@ impl LineStore {
 
 /// Represents a span on code
 #[derive(Debug)]
-pub struct Span {
+pub struct Line {
     /// The associated line from the source code
     line: usize,
 

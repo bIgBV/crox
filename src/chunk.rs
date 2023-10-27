@@ -31,7 +31,7 @@ pub struct Chunk {
 #[derive(Debug)]
 pub enum OpCode {
     /// Return from a function.
-    Return = 0,
+    Return,
 
     /// Represents a constant in the instruction stream. Constants are not
     /// stored in the stream itself, but in a global value store (see
@@ -41,23 +41,41 @@ pub enum OpCode {
     /// An [`Offset`] is internally represented as a usize (usually 8 bytes),
     /// therefore, we can store up to usize::MAX constants. But we will probably
     /// run out of memory long before then
-    Constant = 1,
+    Constant,
 
-    Nil = 2,
+    Nil,
+    True,
+    False,
+    Equal,
+    Greater,
+    Less,
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
+    Not,
+    Negate,
+}
 
-    True = 3,
-
-    False = 4,
-
-    Add = 5,
-
-    Subtract = 6,
-
-    Multiply = 7,
-
-    Divide = 8,
-
-    Negate = 9,
+impl Display for OpCode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            OpCode::Return => write!(f, "Return"),
+            OpCode::Constant => write!(f, "Constant"),
+            OpCode::Nil => write!(f, "Nil"),
+            OpCode::True => write!(f, "True"),
+            OpCode::False => write!(f, "False"),
+            OpCode::Equal => write!(f, "Eq"),
+            OpCode::Greater => write!(f, "Gt"),
+            OpCode::Less => write!(f, "Less"),
+            OpCode::Add => write!(f, "Add"),
+            OpCode::Subtract => write!(f, "Sub"),
+            OpCode::Multiply => write!(f, "Mul"),
+            OpCode::Divide => write!(f, "Div"),
+            OpCode::Not => write!(f, "Not"),
+            OpCode::Negate => write!(f, "Neg"),
+        }
+    }
 }
 
 impl From<u8> for OpCode {
@@ -65,11 +83,18 @@ impl From<u8> for OpCode {
         match value {
             0 => OpCode::Return,
             1 => OpCode::Constant,
-            2 => OpCode::Add,
-            3 => OpCode::Subtract,
-            4 => OpCode::Multiply,
-            5 => OpCode::Divide,
-            6 => OpCode::Negate,
+            2 => OpCode::Nil,
+            3 => OpCode::True,
+            4 => OpCode::False,
+            5 => OpCode::Equal,
+            6 => OpCode::Greater,
+            7 => OpCode::Less,
+            8 => OpCode::Add,
+            9 => OpCode::Subtract,
+            10 => OpCode::Multiply,
+            11 => OpCode::Divide,
+            12 => OpCode::Not,
+            13 => OpCode::Negate,
             _ => unimplemented!("We need more op codes"),
         }
     }
@@ -262,7 +287,7 @@ mod test {
 
     #[test]
     fn format_op_return() {
-        let mut chunk = Chunk::new("test");
+        let chunk = Chunk::new("test");
         chunk.write(OpCode::Return, 1);
 
         let formatter = ChunkFormatter::from_chunk(&chunk);
@@ -276,7 +301,7 @@ mod test {
 
     #[test]
     fn format_op_constant() {
-        let mut chunk = Chunk::new("test");
+        let chunk = Chunk::new("test");
         chunk.write(OpCode::Return, 1);
         chunk.write_constant(5.0, 1).unwrap();
 

@@ -1,5 +1,5 @@
 use std::{
-    fmt::{write, Display},
+    fmt::Display,
     ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign},
 };
 
@@ -20,21 +20,51 @@ impl Value {
     pub fn is_number(&self) -> bool {
         true
     }
+
+    /// Lox follows Ruby in that nil and false are falsey and every other value
+    /// behaves like true.
+    pub fn is_falsey(&self) -> bool {
+        match self.0 {
+            ValueKind::Nil => true,
+            ValueKind::Bool(b) => !b,
+            _ => false,
+        }
+    }
+
+    pub fn value_type(&self) -> &'static str {
+        match self.0 {
+            ValueKind::Bool(_) => "bool",
+            ValueKind::Nil => "nil",
+            ValueKind::Number(_) => "number",
+        }
+    }
+}
+
+impl From<bool> for Value {
+    fn from(value: bool) -> Self {
+        Value(ValueKind::Bool(value))
+    }
+}
+
+impl From<f64> for Value {
+    fn from(value: f64) -> Self {
+        Value(ValueKind::Number(value))
+    }
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
 pub enum ValueKind {
+    Bool(bool),
     Number(f64),
     Nil,
-    Bool(bool),
 }
 
 impl Display for ValueKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ValueKind::Nil => write!(f, "Nil"),
-            ValueKind::Number(n) => write!(f, "Number({})", n),
-            ValueKind::Bool(b) => write!(f, "Bool({})", b),
+            ValueKind::Number(n) => write!(f, "{}", n),
+            ValueKind::Bool(b) => write!(f, "{}", b),
         }
     }
 }

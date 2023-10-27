@@ -114,6 +114,11 @@ fn emit_byte(parser: &Parser, chunk: &Chunk, opcode: OpCode) {
     chunk.write(opcode, parser.current.line)
 }
 
+fn emit_bytes(parser: &Parser, chunk: &Chunk, first: OpCode, second: OpCode) {
+    chunk.write(first, parser.current.line);
+    chunk.write(second, parser.current.line);
+}
+
 // All compiler frontend methods need to distinguish the lifetime that the
 // parser internally manages from the lifetime of the references to the parser
 // itself.  Both the parser and the chunk are instantiated in the `compile`
@@ -171,6 +176,7 @@ fn unary<'compile, 'source>(
 
     match kind {
         TokenType::Minus => emit_byte(parser, chunk, OpCode::Negate),
+        TokenType::Bang => emit_byte(parser, chunk, OpCode::Not),
         _ => unreachable!("Only unary negation is supported for now"),
     };
 
@@ -194,6 +200,12 @@ fn binary<'compile, 'source>(
         TokenType::Plus => emit_byte(parser, chunk, OpCode::Add),
         TokenType::Slash => emit_byte(parser, chunk, OpCode::Divide),
         TokenType::Star => emit_byte(parser, chunk, OpCode::Multiply),
+        TokenType::BangEqual => emit_bytes(parser, chunk, OpCode::Equal, OpCode::Not),
+        TokenType::EqualEqual => emit_byte(parser, chunk, OpCode::Equal),
+        TokenType::Greater => emit_byte(parser, chunk, OpCode::Greater),
+        TokenType::GreaterEqual => emit_bytes(parser, chunk, OpCode::Less, OpCode::Not),
+        TokenType::Less => emit_byte(parser, chunk, OpCode::Less),
+        TokenType::LessEqual => emit_bytes(parser, chunk, OpCode::Greater, OpCode::Not),
         _ => unreachable!("Only arithmetic binary operators should be possible"),
     };
 
@@ -278,14 +290,14 @@ fn parse_rule(operator: TokenType) -> &'static ParseRule {
             ParseRule { prefix: None,           infix: None,         precedence: Precedence::None }, // TokenType::SemiColon
             ParseRule { prefix: None,           infix: Some(binary), precedence: Precedence::Factor }, // TokenType::Slash
             ParseRule { prefix: None,           infix: Some(binary), precedence: Precedence::Factor }, // TokenType::Star
-            ParseRule { prefix: None,           infix: None,         precedence: Precedence::None }, // TokenType::Bang
-            ParseRule { prefix: None,           infix: None,         precedence: Precedence::None }, // TokenType::BangEqual
+            ParseRule { prefix: Some(unary),    infix: None,         precedence: Precedence::None }, // TokenType::Bang
+            ParseRule { prefix: None,           infix: Some(binary), precedence: Precedence::Eq }, // TokenType::BangEqual
             ParseRule { prefix: None,           infix: None,         precedence: Precedence::None }, // TokenType::Equal
-            ParseRule { prefix: None,           infix: None,         precedence: Precedence::None }, // TokenType::EqualEqual
-            ParseRule { prefix: None,           infix: None,         precedence: Precedence::None }, // TokenType::Greater
-            ParseRule { prefix: None,           infix: None,         precedence: Precedence::None }, // TokenType::GreaterEqual
-            ParseRule { prefix: None,           infix: None,         precedence: Precedence::None }, // TokenType::Less
-            ParseRule { prefix: None,           infix: None,         precedence: Precedence::None }, // TokenType::LessEqual
+            ParseRule { prefix: None,           infix: Some(binary), precedence: Precedence::Eq }, // TokenType::EqualEqual
+            ParseRule { prefix: None,           infix: Some(binary), precedence: Precedence::Comp }, // TokenType::Greater
+            ParseRule { prefix: None,           infix: Some(binary), precedence: Precedence::Comp }, // TokenType::GreaterEqual
+            ParseRule { prefix: None,           infix: Some(binary), precedence: Precedence::Comp }, // TokenType::Less
+            ParseRule { prefix: None,           infix: Some(binary), precedence: Precedence::Comp }, // TokenType::LessEqual
             ParseRule { prefix: None,           infix: None,         precedence: Precedence::None }, // TokenType::Identifier
             ParseRule { prefix: None,           infix: None,         precedence: Precedence::None }, // TokenType::String
             ParseRule { prefix: Some(number),   infix: None,         precedence: Precedence::None }, // TokenType::Number
