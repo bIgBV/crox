@@ -48,7 +48,7 @@ impl Vm {
 
             match instruction {
                 OpCode::Return => {
-                    let value = chunk.get_value(&self.pop())?;
+                    let value = chunk.take_value(&self.pop())?;
                     debug!(%value);
                     println!("{:#}", value);
                     return Ok(());
@@ -71,7 +71,7 @@ impl Vm {
                         }
                         Ok(())
                     })?;
-                    let value = chunk.get_value(&self.pop())?;
+                    let value = chunk.take_value(&self.pop())?;
                     self.push(chunk.add_value(-value).unwrap());
                 }
                 OpCode::Add => self.binary_op(OpCode::Add, chunk)?,
@@ -79,10 +79,13 @@ impl Vm {
                 OpCode::Multiply => self.binary_op(OpCode::Multiply, chunk)?,
                 OpCode::Divide => self.binary_op(OpCode::Divide, chunk)?,
                 OpCode::Not => {
-                    self.push(chunk.add_value(chunk.get_value(&self.pop())?.is_falsey().into())?)
+                    // Take ownership of the value
+                    let updated_value = chunk.take_value(&self.pop())?.is_falsey().into();
+                    self.push(chunk.add_value(updated_value)?)
                 }
-                OpCode::Nil => self.push(chunk.add_value(Value(ValueKind::Nil))?),
-                OpCode::False => self.push(chunk.add_value(Value(ValueKind::Bool(false)))?),
+                OpCode::Nil => self.push(chunk.add_value(Value::new_nil())?),
+                OpCode::False => self.push(chunk.add_value(Value::new_bool(false))?),
+                OpCode::True => self.push(chunk.add_value(Value::new_bool(true))?),
                 OpCode::Equal => {
                     let a = chunk.get_value(&self.pop())?;
                     let b = chunk.get_value(&self.pop())?;
@@ -91,7 +94,6 @@ impl Vm {
                 }
                 OpCode::Greater => self.binary_op(OpCode::Greater, chunk)?,
                 OpCode::Less => self.binary_op(OpCode::Less, chunk)?,
-                OpCode::True => self.push(chunk.add_value(Value(ValueKind::Bool(true)))?),
             }
         }
 
@@ -135,18 +137,21 @@ impl Vm {
             Ok(())
         })?;
 
-        let b = chunk.get_value(&self.pop())?;
-        let a = chunk.get_value(&self.pop())?;
+        // Ensure we take ownership of the value here.
+        let b = chunk.take_value(&self.pop())?;
+        let a = chunk.take_value(&self.pop())?;
 
-        match op {
-            OpCode::Add => self.push(chunk.add_value(b + a)?),
-            OpCode::Subtract => self.push(chunk.add_value(b - a)?),
-            OpCode::Multiply => self.push(chunk.add_value(b * a)?),
-            OpCode::Divide => self.push(chunk.add_value(b / a)?),
-            OpCode::Greater => self.push(chunk.add_value((a > b).into())?),
-            OpCode::Less => self.push(chunk.add_value((a < b).into())?),
+        let result = match op {
+            OpCode::Add => b + a,
+            OpCode::Subtract => b - a,
+            OpCode::Multiply => b * a,
+            OpCode::Divide => b / a,
+            OpCode::Greater => (a > b).into(),
+            OpCode::Less => (a < b).into(),
             _ => panic!("This should never happen"),
         };
+
+        self.push(chunk.add_value(result)?);
 
         Ok(())
     }

@@ -38,8 +38,14 @@ impl Repl {
             rl.helper_mut().expect("No helper").colored_prompt = format!("\x1b[1;32m{p}\x1b[0m");
             let readline = rl.readline(&p);
             if let Ok(line) = readline {
+                if line.len() == 0 {
+                    continue;
+                }
                 rl.add_history_entry(line.as_str())?;
-                vm.interpret(line)?;
+                match vm.interpret(line) {
+                    Ok(_) => (),
+                    Err(e) => println!("{}", e),
+                }
             } else {
                 println!("Interrupted");
                 break;

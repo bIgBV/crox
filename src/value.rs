@@ -1,185 +1,17 @@
 use std::{
     fmt::Display,
-    ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign},
+    ops::{Add, Div, Mul, Neg, Sub},
 };
 
-use sharded_slab::Slab;
+use sharded_slab::{Entry, Slab};
 use thiserror::Error;
+use tracing::{error, instrument};
 
 use crate::memory::Offset;
 
 #[derive(Debug)]
 pub struct Values {
     storage: Slab<ValueKind>,
-}
-
-#[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
-pub struct Value(pub ValueKind);
-
-impl Value {
-    pub fn is_number(&self) -> bool {
-        true
-    }
-
-    /// Lox follows Ruby in that nil and false are falsey and every other value
-    /// behaves like true.
-    pub fn is_falsey(&self) -> bool {
-        match self.0 {
-            ValueKind::Nil => true,
-            ValueKind::Bool(b) => !b,
-            _ => false,
-        }
-    }
-
-    pub fn value_type(&self) -> &'static str {
-        match self.0 {
-            ValueKind::Bool(_) => "bool",
-            ValueKind::Nil => "nil",
-            ValueKind::Number(_) => "number",
-        }
-    }
-}
-
-impl From<bool> for Value {
-    fn from(value: bool) -> Self {
-        Value(ValueKind::Bool(value))
-    }
-}
-
-impl From<f64> for Value {
-    fn from(value: f64) -> Self {
-        Value(ValueKind::Number(value))
-    }
-}
-
-#[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
-pub enum ValueKind {
-    Bool(bool),
-    Number(f64),
-    Nil,
-}
-
-impl Display for ValueKind {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ValueKind::Nil => write!(f, "Nil"),
-            ValueKind::Number(n) => write!(f, "{}", n),
-            ValueKind::Bool(b) => write!(f, "{}", b),
-        }
-    }
-}
-
-impl Neg for Value {
-    type Output = Self;
-
-    fn neg(self) -> Self::Output {
-        match self.0 {
-            ValueKind::Number(n) => Value(ValueKind::Number(-n)),
-            _ => unreachable!("Vm checks for types"),
-        }
-    }
-}
-
-impl Add for Value {
-    type Output = Self;
-
-    fn add(self, rhs: Self) -> Self::Output {
-        match (self.0, rhs.0) {
-            (ValueKind::Number(left), ValueKind::Number(right)) => {
-                Value(ValueKind::Number(left + right))
-            }
-            _ => unreachable!("The VM ensures types match"),
-        }
-    }
-}
-
-impl AddAssign for Value {
-    fn add_assign(&mut self, rhs: Self) {
-        match (self.0, rhs.0) {
-            (ValueKind::Number(left), ValueKind::Number(right)) => {
-                *self = Value(ValueKind::Number(left + right));
-            }
-            _ => unreachable!("The VM ensures types match"),
-        }
-    }
-}
-
-impl Sub for Value {
-    type Output = Self;
-
-    fn sub(self, rhs: Self) -> Self::Output {
-        match (self.0, rhs.0) {
-            (ValueKind::Number(left), ValueKind::Number(right)) => {
-                Value(ValueKind::Number(left - right))
-            }
-            _ => unreachable!("The VM ensures types match"),
-        }
-    }
-}
-
-impl SubAssign for Value {
-    fn sub_assign(&mut self, rhs: Self) {
-        match (self.0, rhs.0) {
-            (ValueKind::Number(left), ValueKind::Number(right)) => {
-                *self = Value(ValueKind::Number(left - right));
-            }
-            _ => unreachable!("The VM ensures types match"),
-        }
-    }
-}
-
-impl Mul for Value {
-    type Output = Self;
-
-    fn mul(self, rhs: Self) -> Self::Output {
-        match (self.0, rhs.0) {
-            (ValueKind::Number(left), ValueKind::Number(right)) => {
-                Value(ValueKind::Number(left * right))
-            }
-            _ => unreachable!("The VM ensures types match"),
-        }
-    }
-}
-
-impl MulAssign for Value {
-    fn mul_assign(&mut self, rhs: Self) {
-        match (self.0, rhs.0) {
-            (ValueKind::Number(left), ValueKind::Number(right)) => {
-                *self = Value(ValueKind::Number(left * right));
-            }
-            _ => unreachable!("The VM ensures types match"),
-        }
-    }
-}
-
-impl Div for Value {
-    type Output = Self;
-
-    fn div(self, rhs: Self) -> Self::Output {
-        match (self.0, rhs.0) {
-            (ValueKind::Number(left), ValueKind::Number(right)) => {
-                Value(ValueKind::Number(left / right))
-            }
-            _ => unreachable!("The VM ensures types match"),
-        }
-    }
-}
-
-impl DivAssign for Value {
-    fn div_assign(&mut self, rhs: Self) {
-        match (self.0, rhs.0) {
-            (ValueKind::Number(left), ValueKind::Number(right)) => {
-                *self = Value(ValueKind::Number(left / right));
-            }
-            _ => unreachable!("The VM ensures types match"),
-        }
-    }
-}
-
-impl std::fmt::Display for Value {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
-    }
 }
 
 impl Values {
@@ -189,19 +21,289 @@ impl Values {
         }
     }
 
-    pub fn add_constant(&self, value: Value) -> Result<Offset, ValueError> {
+    #[instrument(skip(self))]
+    pub fn add(&self, value: Value<'_>) -> Result<Offset, ValueError> {
+        let Some(kind) = value.kind() else {
+            error!("Cannot add an existing entry back to storage");
+            return Err(ValueError::ValueExists);
+        };
+
         self.storage
-            .insert(value.0)
+            .insert(kind)
             .map(Offset)
             .ok_or(ValueError::OutOfMemory)
     }
 
-    pub fn get(&self, idx: Offset) -> Result<Value, ValueError> {
+    /// Take ownership of the value at the given index
+    pub fn take(&self, idx: Offset) -> Result<Value<'_>, ValueError> {
+        self.storage
+            .take(idx.0)
+            .map(|val| Value::Owned(val))
+            .ok_or(ValueError::NotFound(idx))
+    }
+
+    /// Get a reference to the value at the given index
+    pub fn get(&self, idx: Offset) -> Result<Value<'_>, ValueError> {
         // make a copy of the value in the store. Could probably optimized
         self.storage
             .get(idx.0)
-            .map(|val| Value(*val))
+            .map(|val| Value::Entry(val))
             .ok_or(ValueError::NotFound(idx))
+    }
+}
+
+/// Represents a lox value.
+///
+/// This can be either an owned value or a reference to an entry in the slab.
+///
+/// The arithmentic operators implemented on this type always return a new
+/// `Owned` value as semantically it fits the model of these math operators in
+/// my head
+#[derive(Debug)]
+pub enum Value<'a> {
+    Owned(ValueKind),
+    Entry(Entry<'a, ValueKind>),
+}
+
+impl Add for Value<'_> {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Value::Owned(self.as_ref() + rhs.as_ref())
+    }
+}
+
+impl Sub for Value<'_> {
+    type Output = Self;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        Value::Owned(self.as_ref() - rhs.as_ref())
+    }
+}
+
+impl Mul for Value<'_> {
+    type Output = Self;
+
+    fn mul(self, rhs: Self) -> Self::Output {
+        Value::Owned(self.as_ref() * rhs.as_ref())
+    }
+}
+
+impl Div for Value<'_> {
+    type Output = Self;
+
+    fn div(self, rhs: Self) -> Self::Output {
+        Value::Owned((self.as_ref() / rhs.as_ref()).clone())
+    }
+}
+
+impl PartialEq for Value<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        self.as_ref().eq(other.as_ref())
+    }
+}
+
+impl PartialOrd for Value<'_> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        self.as_ref().partial_cmp(other.as_ref())
+    }
+}
+
+impl Neg for Value<'_> {
+    type Output = Self;
+
+    fn neg(self) -> Self::Output {
+        Value::Owned((-self.as_ref()).clone())
+    }
+}
+
+impl<'a> Value<'a> {
+    pub fn as_ref(&self) -> &ValueKind {
+        match self {
+            Value::Owned(val) => &val,
+            Value::Entry(en) => &en,
+        }
+    }
+
+    pub fn new_nil() -> Self {
+        Value::Owned(ValueKind::Nil)
+    }
+
+    pub fn new_bool(val: bool) -> Self {
+        Value::Owned(ValueKind::Bool(val))
+    }
+
+    pub fn new_num(num: f64) -> Self {
+        Value::Owned(ValueKind::Number(num))
+    }
+
+    pub fn is_number(&self) -> bool {
+        self.as_ref().is_number()
+    }
+
+    /// Lox follows Ruby in that nil and false are falsey and every other value
+    /// behaves like true.
+    pub fn is_falsey(&self) -> bool {
+        self.as_ref().is_falsey()
+    }
+
+    pub fn value_type(&self) -> &'static str {
+        self.as_ref().value_type()
+    }
+
+    pub fn is_entry(&self) -> bool {
+        matches!(self, Value::Entry(_))
+    }
+
+    pub fn kind(self) -> Option<ValueKind> {
+        match self {
+            Value::Entry(_) => None,
+            Value::Owned(kind) => Some(kind),
+        }
+    }
+}
+
+impl ValueKind {
+    pub fn is_number(&self) -> bool {
+        match self {
+            ValueKind::Number(_) => true,
+            _ => false,
+        }
+    }
+
+    /// Lox follows Ruby in that nil and false are falsey and every other value
+    /// behaves like true.
+    pub fn is_falsey(&self) -> bool {
+        match self {
+            ValueKind::Nil => true,
+            ValueKind::Bool(b) => !b,
+            _ => false,
+        }
+    }
+
+    pub fn value_type(&self) -> &'static str {
+        match self {
+            ValueKind::Bool(_) => "bool",
+            ValueKind::Nil => "nil",
+            ValueKind::Number(_) => "number",
+            ValueKind::Obj(_) => "object",
+        }
+    }
+}
+
+impl From<bool> for Value<'_> {
+    fn from(value: bool) -> Self {
+        Value::Owned(ValueKind::Bool(value))
+    }
+}
+
+impl From<f64> for Value<'_> {
+    fn from(value: f64) -> Self {
+        Value::Owned(ValueKind::Number(value))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
+pub enum ValueKind {
+    Bool(bool),
+    Number(f64),
+    Nil,
+    Obj(Box<Object>),
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
+pub struct Object {
+    kind: ObjectKind,
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
+pub enum ObjectKind {
+    String(String),
+}
+
+impl Display for Object {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.kind)
+    }
+}
+
+impl Display for ObjectKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ObjectKind::String(str) => write!(f, "{{String: {}}}", str),
+        }
+    }
+}
+
+impl Display for ValueKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ValueKind::Nil => write!(f, "Nil"),
+            ValueKind::Number(n) => write!(f, "{}", n),
+            ValueKind::Bool(b) => write!(f, "{}", b),
+            ValueKind::Obj(obj) => write!(f, "{}", obj),
+        }
+    }
+}
+
+impl Neg for &ValueKind {
+    type Output = ValueKind;
+
+    fn neg(self) -> Self::Output {
+        match self {
+            ValueKind::Number(n) => ValueKind::Number(-n),
+            _ => unreachable!("Vm checks for types"),
+        }
+    }
+}
+
+impl Add for &ValueKind {
+    type Output = ValueKind;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        match (self, rhs) {
+            (ValueKind::Number(left), ValueKind::Number(right)) => ValueKind::Number(left + right),
+            _ => unreachable!("The VM ensures types match"),
+        }
+    }
+}
+
+impl Sub for &ValueKind {
+    type Output = ValueKind;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        match (self, rhs) {
+            (ValueKind::Number(left), ValueKind::Number(right)) => ValueKind::Number(left - right),
+            _ => unreachable!("The VM ensures types match"),
+        }
+    }
+}
+
+impl Mul for &ValueKind {
+    type Output = ValueKind;
+
+    fn mul(self, rhs: Self) -> Self::Output {
+        match (self, rhs) {
+            (ValueKind::Number(left), ValueKind::Number(right)) => ValueKind::Number(left * right),
+            _ => unreachable!("The VM ensures types match"),
+        }
+    }
+}
+
+impl Div for &ValueKind {
+    type Output = ValueKind;
+
+    fn div(self, rhs: Self) -> Self::Output {
+        match (self, rhs) {
+            (ValueKind::Number(left), ValueKind::Number(right)) => ValueKind::Number(left / right),
+            _ => unreachable!(""),
+        }
+    }
+}
+
+impl std::fmt::Display for Value<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_ref())
     }
 }
 
@@ -212,4 +314,7 @@ pub enum ValueError {
 
     #[error("Value for Offset: {0} not found")]
     NotFound(Offset),
+
+    #[error("Value already exists in the slab")]
+    ValueExists,
 }

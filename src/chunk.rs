@@ -119,20 +119,22 @@ impl Chunk {
 
     /// Write a constant to the bytestream.
     pub fn write_constant(&self, constant: f64, line: usize) -> Result<(), ChunkError> {
-        let offset = self
-            .values
-            .add_constant(Value(crate::value::ValueKind::Number(constant)))?;
+        let offset = self.values.add(Value::new_num(constant))?;
         self.write(OpCode::Constant, line);
         self.write_bytes(offset.as_bytes(), line);
         Ok(())
     }
 
-    pub fn get_value(&self, offset: &Offset) -> Result<Value, ChunkError> {
+    pub fn get_value(&self, offset: &Offset) -> Result<Value<'_>, ChunkError> {
         self.values.get(*offset).map_err(|err| err.into())
     }
 
+    pub fn take_value(&self, offset: &Offset) -> Result<Value<'_>, ChunkError> {
+        self.values.take(*offset).map_err(Into::into)
+    }
+
     pub fn add_value(&self, value: Value) -> Result<Offset, ChunkError> {
-        self.values.add_constant(value).map_err(|err| err.into())
+        self.values.add(value).map_err(|err| err.into())
     }
 
     fn write_bytes(&self, bytes: &[u8], line: usize) {
@@ -249,7 +251,7 @@ impl<'chunk> ChunkFormatter<'chunk> {
                 .values
                 .get(idx)
                 .map_err(|_| FormatterError::Value(idx))?;
-            buffer.push_str(&format!(" {}\n", val.0));
+            buffer.push_str(&format!(" {}\n", val));
         } else {
             return Err(FormatterError::OffsetParse(offset));
         }
