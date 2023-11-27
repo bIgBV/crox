@@ -59,6 +59,7 @@ impl<'source> Scanner<'source> {
 
     #[instrument(skip_all, fields(start = self.start, current = self.current))]
     fn match_char(&mut self, expected: char) -> bool {
+        trace!(expected_char=%expected);
         if self.is_at_end() || self.current_char() != Some(expected) {
             false
         } else {

@@ -32,6 +32,7 @@ fn main() -> Result<()> {
 
     if options.verbose {
         let subscriber = FmtSubscriber::builder()
+            .pretty()
             // all spans/events with a level higher than TRACE (e.g, debug, info, warn, etc.)
             // will be written to stdout.
             .with_max_level(Level::TRACE)

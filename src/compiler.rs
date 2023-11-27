@@ -11,7 +11,7 @@ use std::{
 
 use miette::Diagnostic;
 use thiserror::Error;
-use tracing::{debug, error, instrument};
+use tracing::{debug, error, instrument, trace};
 
 use crate::{
     chunk::{Chunk, ChunkError, OpCode},
@@ -50,7 +50,9 @@ impl<'source> Parser<'source> {
         self.source.get().expect("Parser in uninitialized state!")
     }
 
+    #[instrument(skip_all)]
     fn advance(&mut self) -> Result<(), CompilerError> {
+        trace!("Advancing parser");
         self.previous = self.current.clone();
 
         for token in &mut *self.scanner.write().unwrap() {
@@ -147,6 +149,7 @@ fn number<'compile, 'source>(
         .parse::<f64>()
         .map_err(|err| Serialization::Number(err))?;
 
+    trace!(number=%(*value), "parsed number");
     chunk.write_constant(*value, parser.previous.line)?;
 
     Ok(())
@@ -157,6 +160,7 @@ fn grouping<'compile, 'source>(
     parser: &'compile mut Parser<'source>,
     chunk: &'compile mut Chunk,
 ) -> Result<(), CompilerError> {
+    trace!("parsing gropuing");
     // We should have already consumed the LeftParen
     expression(parser, chunk)?;
     parser.consume(TokenType::RightParen)?;
@@ -176,6 +180,7 @@ fn unary<'compile, 'source>(
     // Compile the operand
     parse_precedence(parser, Precedence::Unary, chunk)?;
 
+    trace!(op_kind=?kind);
     match kind {
         TokenType::Minus => emit_byte(parser, chunk, OpCode::Negate),
         TokenType::Bang => emit_byte(parser, chunk, OpCode::Not),
@@ -190,12 +195,13 @@ fn binary<'compile, 'source>(
     parser: &'compile mut Parser<'source>,
     chunk: &'compile mut Chunk,
 ) -> Result<(), CompilerError> {
-    debug!("Parsing binary operator");
     let operator = parser.previous.kind;
     let rule = parse_rule(operator);
 
     // parse the right operand, only parsing expression of higher precedence
     parse_precedence(parser, rule.precedence, chunk)?;
+
+    debug!(op=?operator, "Parsing binary operator");
 
     match operator {
         TokenType::Minus => emit_byte(parser, chunk, OpCode::Negate),
@@ -205,8 +211,10 @@ fn binary<'compile, 'source>(
         TokenType::BangEqual => emit_bytes(parser, chunk, OpCode::Equal, OpCode::Not),
         TokenType::EqualEqual => emit_byte(parser, chunk, OpCode::Equal),
         TokenType::Greater => emit_byte(parser, chunk, OpCode::Greater),
+        // Simplifying the opcodes by doing negations for compound comparisons
         TokenType::GreaterEqual => emit_bytes(parser, chunk, OpCode::Less, OpCode::Not),
         TokenType::Less => emit_byte(parser, chunk, OpCode::Less),
+        // Simplifying the opcodes by doing negations for compound comparisons
         TokenType::LessEqual => emit_bytes(parser, chunk, OpCode::Greater, OpCode::Not),
         _ => unreachable!("Only arithmetic binary operators should be possible"),
     };
@@ -219,8 +227,10 @@ fn literal<'compile, 'source>(
     parser: &'compile mut Parser<'source>,
     chunk: &'compile mut Chunk,
 ) -> Result<(), CompilerError> {
-    debug!("Parsing literal");
-    match parser.previous.kind {
+    let kind = parser.previous.kind;
+    debug!(?kind, "Parsing literal");
+
+    match kind {
         TokenType::False => emit_byte(parser, chunk, OpCode::False),
         TokenType::True => emit_byte(parser, chunk, OpCode::True),
         TokenType::Nil => emit_byte(parser, chunk, OpCode::Nil),
@@ -264,6 +274,7 @@ fn parse_precedence<'compile, 'source>(
 
     prefix(parser, chunk)?;
 
+    // While the precedence is lower than the current token's precedence, keep parsing the infix expression
     while precedence as u8 <= parse_rule(parser.current.kind).precedence as u8 {
         // advance the parser so we consume the infix operator
         parser.advance()?;
@@ -297,6 +308,7 @@ struct ParseRule {
 }
 
 #[rustfmt::skip]
+#[instrument]
 fn parse_rule(operator: TokenType) -> &'static ParseRule {
     PARSE_RULES.get_or_init(|| {
         [
@@ -341,7 +353,9 @@ fn parse_rule(operator: TokenType) -> &'static ParseRule {
         ]
     });
 
-    &PARSE_RULES.get().unwrap()[operator as usize]
+    let rule = &PARSE_RULES.get().unwrap()[operator as usize];
+    trace!(?rule, "matched rule");
+    rule
 }
 
 /// These are all of Lox’s precedence levels in order from lowest to highest.

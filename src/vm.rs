@@ -43,7 +43,11 @@ impl Vm {
     fn run_loop(&self, chunk: &Chunk) -> Result<(), VmError> {
         // TODO: Is Relaxed ordering here ok if we are AcqRel within the loop itself?
         debug!(%chunk, "interpreting chunk");
-        while self.ip.load(Ordering::Relaxed) < chunk.code.read().unwrap().len() {
+
+        debug_assert!(self.stack.read().unwrap().len() == 0, "Stack isn't clear yet");
+        debug_assert!(self.ip.load(Ordering::Acquire) == 0, "IP isn't set to 0");
+
+        while self.ip.load(Ordering::Acquire) < chunk.code.read().unwrap().len() {
             let instruction = self.read_byte(chunk);
             debug!(instruction = ?instruction, stack = %self.dump_stack(chunk));
 
@@ -339,5 +343,41 @@ mod test {
             vm.ip.load(Ordering::Relaxed),
             OpCode::Constant as usize + Offset::SIZE + 1
         );
+    }
+
+    #[test]
+    fn repeat_executions() {
+        let vm = Vm::new();
+        let line = "(6 <= (7 == 5))".to_string();
+
+        let result = vm.interpret(line.clone());
+        let Err(VmError::OperatorMismatch {
+            op: _,
+            left_ty: _,
+            right_ty: _,
+        }) = result
+        else {
+            panic!("Unexpected error");
+        };
+
+        let result = vm.interpret(line.clone());
+        let Err(VmError::OperatorMismatch {
+            op: _,
+            left_ty: _,
+            right_ty: _,
+        }) = result
+        else {
+            panic!("Unexpected error");
+        };
+
+        let result = vm.interpret(line);
+        let Err(VmError::OperatorMismatch {
+            op: _,
+            left_ty: _,
+            right_ty: _,
+        }) = result
+        else {
+            panic!("Unexpected error");
+        };
     }
 }

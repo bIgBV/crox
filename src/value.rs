@@ -266,7 +266,7 @@ impl Object {
     fn is_string(&self) -> bool {
         match self.kind {
             ObjectKind::String(_) => true,
-            _ => false,
+            //_ => false,
         }
     }
 }
