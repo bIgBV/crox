@@ -9,7 +9,7 @@ use tracing::{debug, error, instrument, trace};
 
 use crate::chunk::ChunkError;
 use crate::compiler::{compile, CompilerError};
-use crate::value::{Value, ValueKind, ValueType};
+use crate::value::{Value, ValueError, ValueKind, ValueType};
 use crate::{
     chunk::{Chunk, OpCode},
     memory::{Instruction, Offset},
@@ -42,6 +42,7 @@ impl Vm {
     #[instrument(skip_all)]
     fn run_loop(&self, chunk: &Chunk) -> Result<(), VmError> {
         // TODO: Is Relaxed ordering here ok if we are AcqRel within the loop itself?
+        debug!(%chunk, "interpreting chunk");
         while self.ip.load(Ordering::Relaxed) < chunk.code.read().unwrap().len() {
             let instruction = self.read_byte(chunk);
             debug!(instruction = ?instruction, stack = %self.dump_stack(chunk));
@@ -136,6 +137,20 @@ impl Vm {
     }
 
     #[instrument(skip_all)]
+    fn concatenate(&self, chunk: &Chunk) -> Result<(), VmError> {
+        let left = chunk
+            .take_value(self.pop())?
+            .take()
+            .ok_or_else(|| VmError::Value)?;
+        let right = chunk
+            .take_value(self.pop())?
+            .take()
+            .ok_or_else(|| VmError::Value)?;
+
+        Ok(())
+    }
+
+    #[instrument(skip_all)]
     fn op_neg(&self, chunk: &Chunk, opcode: OpCode) -> Result<(), VmError> {
         trace!("Executing OpCode::Neg");
         self.peek_with(0, |offset| {
@@ -163,8 +178,9 @@ impl Vm {
             if !first.is_number() || !second.is_number() {
                 return Err(operator_error(
                     &format!("{}", op),
-                    first.value_type(),
+                    // We need to flip the order since we are working with values from a stack.
                     second.value_type(),
+                    first.value_type(),
                 ));
             }
 
@@ -283,6 +299,9 @@ pub enum VmError {
 
     #[error("Error with value store: {0}")]
     ChunkError(#[from] ChunkError),
+
+    #[error("Value error")]
+    Value,
 }
 
 fn operator_error(op: &str, left_ty: ValueType, right_ty: ValueType) -> VmError {

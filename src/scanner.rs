@@ -227,14 +227,6 @@ pub enum ScanError {
     UnterminatedString(usize),
 }
 
-impl ScanError {
-    pub fn loc(&self) -> usize {
-        match self {
-            ScanError::UnexpectedCharacter(loc) | ScanError::UnterminatedString(loc) => *loc,
-        }
-    }
-}
-
 impl<'source> Iterator for Scanner<'source> {
     type Item = Result<Token<'source>, ScanError>;
 

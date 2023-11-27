@@ -170,6 +170,16 @@ impl<'a> Value<'a> {
             Value::Owned(kind) => Some(kind),
         }
     }
+
+    pub fn take(self) -> Option<ValueKind> {
+        // We can only take an owned value
+        debug_assert!(matches!(self, Value::Owned(_)));
+
+        match self {
+            Value::Owned(val) => Some(val),
+            _ => None,
+        }
+    }
 }
 
 impl ValueKind {

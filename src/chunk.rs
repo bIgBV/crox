@@ -65,15 +65,15 @@ impl Display for OpCode {
             OpCode::Nil => write!(f, "Nil"),
             OpCode::True => write!(f, "True"),
             OpCode::False => write!(f, "False"),
-            OpCode::Equal => write!(f, "Eq"),
-            OpCode::Greater => write!(f, "Gt"),
-            OpCode::Less => write!(f, "Less"),
-            OpCode::Add => write!(f, "Add"),
-            OpCode::Subtract => write!(f, "Sub"),
-            OpCode::Multiply => write!(f, "Mul"),
-            OpCode::Divide => write!(f, "Div"),
-            OpCode::Not => write!(f, "Not"),
-            OpCode::Negate => write!(f, "Neg"),
+            OpCode::Equal => write!(f, "=="),
+            OpCode::Greater => write!(f, ">"),
+            OpCode::Less => write!(f, "<"),
+            OpCode::Add => write!(f, "+"),
+            OpCode::Subtract => write!(f, "-"),
+            OpCode::Multiply => write!(f, "*"),
+            OpCode::Divide => write!(f, "/"),
+            OpCode::Not => write!(f, "!"),
+            OpCode::Negate => write!(f, "-"),
         }
     }
 }
@@ -208,6 +208,18 @@ impl<'chunk> ChunkFormatter<'chunk> {
                         )
                     })?,
 
+                2 => self.simple_instruction(buffer, "OP_NIL", offset, src_line)?,
+                3 => self.simple_instruction(buffer, "OP_TRUE", offset, src_line)?,
+                4 => self.simple_instruction(buffer, "OP_FALSE", offset, src_line)?,
+                5 => self.simple_instruction(buffer, "OP_EQUAL", offset, src_line)?,
+                6 => self.simple_instruction(buffer, "OP_GREATER", offset, src_line)?,
+                7 => self.simple_instruction(buffer, "OP_LESS", offset, src_line)?,
+                8 => self.simple_instruction(buffer, "OP_ADD", offset, src_line)?,
+                9 => self.simple_instruction(buffer, "OP_SUBTRACT", offset, src_line)?,
+                10 => self.simple_instruction(buffer, "OP_MULTIPLY", offset, src_line)?,
+                11 => self.simple_instruction(buffer, "OP_DIVIDE", offset, src_line)?,
+                12 => self.simple_instruction(buffer, "OP_NOT", offset, src_line)?,
+                13 => self.simple_instruction(buffer, "OP_NEGATE", offset, src_line)?,
                 _ => todo!(),
             };
         }

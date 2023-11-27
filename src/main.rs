@@ -4,6 +4,7 @@ use repl::Repl;
 use tracing::Level;
 
 use tracing_subscriber::FmtSubscriber;
+use vm::Vm;
 
 mod chunk;
 mod compiler;
@@ -20,6 +21,10 @@ struct Options {
     /// enable verbose logging
     #[argh(switch, short = 'v')]
     verbose: bool,
+
+    /// compile and execute a string
+    #[argh(option, short = 's')]
+    stream: Option<String>,
 }
 
 fn main() -> Result<()> {
@@ -37,7 +42,12 @@ fn main() -> Result<()> {
             .expect("setting default subscriber failed");
     }
 
-    let _ = Repl::start()?;
+    if let Some(stream) = options.stream {
+        let vm = Vm::new();
+        vm.interpret(stream)?;
+    } else {
+        let _ = Repl::start()?;
+    }
 
     Ok(())
 }

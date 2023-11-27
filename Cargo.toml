@@ -19,4 +19,5 @@ tracing-test = "0.2.4"
 zerocopy = { version = "0.6.1", features = ["alloc", "simd"] }
 
 [dev-dependencies]
+bytemuck = "1.14.0"
 pretty_assertions = "1.3.0"

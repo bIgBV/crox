@@ -145,7 +145,7 @@ fn number<'compile, 'source>(
     let range = parser.previous.start..parser.previous.start + parser.previous.length;
     let value = &source[range]
         .parse::<f64>()
-        .map_err(|err| Serialization::Numer(err))?;
+        .map_err(|err| Serialization::Number(err))?;
 
     chunk.write_constant(*value, parser.previous.line)?;
 
@@ -415,5 +415,89 @@ pub enum CompilerError {
 pub enum Serialization {
     #[label = "Error parsing numerical value"]
     #[error(transparent)]
-    Numer(#[from] ParseFloatError),
+    Number(#[from] ParseFloatError),
+}
+
+#[cfg(test)]
+mod test {
+    use pretty_assertions::assert_eq;
+
+    use crate::chunk::OpCode;
+
+    use super::compile;
+
+    #[test]
+    fn parse_literal() {
+        let source = "nil";
+        let result = compile(source);
+        assert!(result.is_ok());
+        let result = result.unwrap();
+        let expected = [OpCode::Nil as u8, OpCode::Return as u8];
+        assert_eq!(&(*result.code.read().unwrap()), &expected);
+
+        let source = "false";
+        let result = compile(source);
+        assert!(result.is_ok());
+        let result = result.unwrap();
+        let expected = [OpCode::False as u8, OpCode::Return as u8];
+        assert_eq!(&(*result.code.read().unwrap()), &expected);
+
+        let source = "true";
+        let result = compile(source);
+        assert!(result.is_ok());
+        let result = result.unwrap();
+        let expected = [OpCode::True as u8, OpCode::Return as u8];
+        assert_eq!(&(*result.code.read().unwrap()), &expected);
+    }
+
+    #[test]
+    fn parse_number() {
+        let source = "7003.8008";
+        let result = compile(source);
+        assert!(result.is_ok());
+
+        // The the offset of the constant is also inserted into the chunk. In this case
+        // it's 0usize which would take up 8 bytes
+        let mut expected = vec![OpCode::Constant as u8];
+        expected.extend_from_slice(&bytemuck::cast::<usize, [u8; 8]>(0));
+        expected.push(OpCode::Return as u8);
+
+        let result = result.unwrap();
+        assert_eq!(&(*result.code.read().unwrap()), &expected);
+    }
+
+    #[test]
+    fn parse_unary() {
+        let source = "-78";
+        let result = compile(source);
+        assert!(result.is_ok());
+        let mut expected = vec![];
+        expected.push(OpCode::Constant as u8);
+        expected.extend_from_slice(&bytemuck::cast::<usize, [u8; 8]>(0));
+        expected.push(OpCode::Negate as u8);
+        expected.push(OpCode::Return as u8);
+
+        assert_eq!((*result.unwrap().code.read().unwrap()), expected);
+
+        let source = "!true";
+
+        let result = compile(source);
+        assert!(result.is_ok());
+
+        let mut expected = vec![];
+        expected.push(OpCode::True as u8);
+        expected.push(OpCode::Not as u8);
+        expected.push(OpCode::Return as u8);
+
+        assert_eq!(*result.unwrap().code.read().unwrap(), expected);
+    }
+
+    #[test]
+    fn parse_binary() {
+        let source = "(-7 * (8 / (64 + 8))) >= (6 <= (84 == 2))";
+        let result = compile(source);
+        assert!(result.is_ok());
+
+        println!("{:?}", result.unwrap().code.read());
+    }
 }
