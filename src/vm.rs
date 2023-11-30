@@ -44,14 +44,17 @@ impl Vm {
         // TODO: Is Relaxed ordering here ok if we are AcqRel within the loop itself?
         debug!(%chunk, "interpreting chunk");
 
-        debug_assert!(self.stack.read().unwrap().len() == 0, "Stack isn't clear yet");
         debug_assert!(self.ip.load(Ordering::Acquire) == 0, "IP isn't set to 0");
+        debug_assert!(
+            self.stack.read().unwrap().is_empty(),
+            "Stack isn't clear yet"
+        );
 
         while self.ip.load(Ordering::Acquire) < chunk.code.read().unwrap().len() {
             let instruction = self.read_byte(chunk);
             debug!(instruction = ?instruction, stack = %self.dump_stack(chunk));
 
-            match instruction {
+            let execution_result = match instruction {
                 OpCode::Return => {
                     let value = chunk.take_value(self.pop())?;
                     debug!(%value);
@@ -64,35 +67,56 @@ impl Vm {
                         .expect("No constant value found");
 
                     self.push(value_offset);
+                    Ok(())
                 }
-                OpCode::Negate => self.op_neg(chunk, instruction)?,
-                OpCode::Add => self.op_add(chunk)?,
-                OpCode::Subtract => self.binary_op(OpCode::Subtract, chunk)?,
-                OpCode::Multiply => self.binary_op(OpCode::Multiply, chunk)?,
-                OpCode::Divide => self.binary_op(OpCode::Divide, chunk)?,
+                OpCode::Negate => self.op_neg(chunk, instruction),
+                OpCode::Add => self.op_add(chunk),
+                OpCode::Subtract => self.binary_op(OpCode::Subtract, chunk),
+                OpCode::Multiply => self.binary_op(OpCode::Multiply, chunk),
+                OpCode::Divide => self.binary_op(OpCode::Divide, chunk),
                 OpCode::Not => {
                     // Take ownership of the value
                     let updated_value = chunk.take_value(self.pop())?.is_falsey().into();
-                    self.push(chunk.add_value(updated_value)?)
+                    self.push(chunk.add_value(updated_value)?);
+                    Ok(())
                 }
-                OpCode::Nil => self.push(chunk.add_value(Value::new_nil())?),
-                OpCode::False => self.push(chunk.add_value(Value::new_bool(false))?),
-                OpCode::True => self.push(chunk.add_value(Value::new_bool(true))?),
+                OpCode::Nil => {
+                    self.push(chunk.add_value(Value::new_nil())?);
+                    Ok(())
+                }
+                OpCode::False => {
+                    self.push(chunk.add_value(Value::new_bool(false))?);
+                    Ok(())
+                }
+                OpCode::True => {
+                    self.push(chunk.add_value(Value::new_bool(true))?);
+                    Ok(())
+                }
                 OpCode::Equal => {
                     let a = chunk.get_value(&self.pop())?;
                     let b = chunk.get_value(&self.pop())?;
 
-                    self.push(chunk.add_value((a == b).into())?)
+                    self.push(chunk.add_value((a == b).into())?);
+                    Ok(())
                 }
-                OpCode::Greater => self.binary_op(OpCode::Greater, chunk)?,
-                OpCode::Less => self.binary_op(OpCode::Less, chunk)?,
+                OpCode::Greater => self.binary_op(OpCode::Greater, chunk),
+                OpCode::Less => self.binary_op(OpCode::Less, chunk),
+            };
+
+            if let Err(error) = execution_result {
+                self.reset_stack();
+                return Err(error);
             }
         }
 
-        self.stack.write().unwrap().clear();
-        self.ip.store(0, Ordering::Release);
+        self.reset_stack();
 
         Ok(())
+    }
+
+    fn reset_stack(&self) {
+        self.stack.write().unwrap().clear();
+        self.ip.store(0, Ordering::Release);
     }
 
     #[instrument(skip(self))]
@@ -142,14 +166,8 @@ impl Vm {
 
     #[instrument(skip_all)]
     fn concatenate(&self, chunk: &Chunk) -> Result<(), VmError> {
-        let left = chunk
-            .take_value(self.pop())?
-            .take()
-            .ok_or_else(|| VmError::Value)?;
-        let right = chunk
-            .take_value(self.pop())?
-            .take()
-            .ok_or_else(|| VmError::Value)?;
+        let left = chunk.take_value(self.pop())?.take().ok_or(VmError::Value)?;
+        let right = chunk.take_value(self.pop())?.take().ok_or(VmError::Value)?;
 
         Ok(())
     }
@@ -239,8 +257,7 @@ impl Vm {
         let offset = lock_guard
             .iter()
             .rev()
-            .skip(distance)
-            .next()
+            .nth(distance)
             .expect("we confirmed that items were present");
 
         check(offset)
@@ -259,14 +276,12 @@ impl Vm {
         let first = lock_guard
             .iter()
             .rev()
-            .skip(first)
-            .next()
+            .nth(first)
             .expect("we confirmed that items were present");
         let second = lock_guard
             .iter()
             .rev()
-            .skip(second)
-            .next()
+            .nth(second)
             .expect("There should be more items present");
 
         check(first, second)

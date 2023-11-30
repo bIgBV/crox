@@ -31,7 +31,7 @@ impl Repl {
         let mut rl = Editor::with_config(config)?;
         rl.set_helper(Some(h));
 
-        let vm = Vm::new();
+        let mut vm = Vm::new();
 
         loop {
             let p = format!(">> ");

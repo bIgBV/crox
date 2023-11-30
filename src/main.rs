@@ -47,7 +47,7 @@ fn main() -> Result<()> {
         let vm = Vm::new();
         vm.interpret(stream)?;
     } else {
-        let _ = Repl::start()?;
+        Repl::start()?;
     }
 
     Ok(())
