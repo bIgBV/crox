@@ -9,7 +9,7 @@ use tracing::{debug, error, instrument, trace};
 
 use crate::chunk::ChunkError;
 use crate::compiler::{compile, CompilerError};
-use crate::value::{Value, ValueError, ValueKind, ValueType};
+use crate::value::{Value, ValueType};
 use crate::{
     chunk::{Chunk, OpCode},
     memory::{Instruction, Offset},
@@ -31,16 +31,15 @@ impl Vm {
         }
     }
 
-    #[instrument(skip(self))]
-    pub fn interpret(&self, line: String) -> Result<(), VmError> {
+    pub fn interpret(&self, line: String, debug: bool) -> Result<(), VmError> {
         let chunk = compile(&line)?;
-        self.run_loop(&chunk)?;
+        self.run_loop(&chunk, debug)?;
 
         Ok(())
     }
 
     #[instrument(skip_all)]
-    fn run_loop(&self, chunk: &Chunk) -> Result<(), VmError> {
+    fn run_loop(&self, chunk: &Chunk, debug: bool) -> Result<(), VmError> {
         // TODO: Is Relaxed ordering here ok if we are AcqRel within the loop itself?
         debug!(%chunk, "interpreting chunk");
 
@@ -49,6 +48,10 @@ impl Vm {
             self.stack.read().unwrap().is_empty(),
             "Stack isn't clear yet"
         );
+
+        if debug {
+            println!("{}", self.dump_stack(chunk));
+        }
 
         while self.ip.load(Ordering::Acquire) < chunk.code.read().unwrap().len() {
             let instruction = self.read_byte(chunk);
@@ -59,7 +62,7 @@ impl Vm {
                     let value = chunk.take_value(self.pop())?;
                     debug!(%value);
                     println!("{:#}", value);
-                    return Ok(());
+                    Ok(())
                 }
                 OpCode::Constant => {
                     let value_offset = self
@@ -104,35 +107,44 @@ impl Vm {
             };
 
             if let Err(error) = execution_result {
-                self.reset_stack();
+                self.reset_state();
                 return Err(error);
             }
         }
 
-        self.reset_stack();
+        self.reset_state();
 
         Ok(())
     }
 
-    fn reset_stack(&self) {
+    /// Reset the state of the VM
+    fn reset_state(&self) {
         self.stack.write().unwrap().clear();
         self.ip.store(0, Ordering::Release);
     }
 
+    /// Reads the [chunk::OpCode] at the index `ip` within the chunk, increments the ip by one and returns the OpCode.
     #[instrument(skip(self))]
     fn read_byte(&self, chunk: &Chunk) -> OpCode {
         chunk.code.read().unwrap()[self.ip.fetch_add(1, Ordering::AcqRel)].into()
     }
 
+    /// Parses type T from the byte stream.
+    ///
+    /// safety:
+    ///     The caller _must_ ensure that the ip is pointing to the start of the
+    ///     type when calling this method.
     #[instrument(skip(self))]
     fn read_type<T>(&self, chunk: &Chunk) -> Option<T>
     where
         T: Instruction,
     {
-        let ip = self.ip.load(Ordering::Acquire);
-        let instruction = ip + T::SIZE;
-        let val = T::read_from(&chunk.code.read().unwrap()[ip..instruction]);
-        self.ip.store(instruction, Ordering::Release);
+        // read_byte would've already updated the IP past the instruction specifying what type
+        // to parse
+        let start = self.ip.load(Ordering::Acquire);
+        let end = start + T::SIZE;
+        let val = T::read_from(&chunk.code.read().unwrap()[start..end]);
+        self.ip.store(end, Ordering::Release);
 
         val
     }
@@ -338,61 +350,79 @@ mod test {
 
     #[test]
     fn read_byte_updates_ip() {
-        let vm = Vm::new();
         let line = "true";
-        let result = vm.interpret(line.to_string());
+        let chunk = compile(line).unwrap();
 
-        assert!(result.is_ok());
-        assert_eq!(vm.ip.load(Ordering::Relaxed), 2);
+        let vm = Vm::new();
+        let op = vm.read_byte(&chunk);
+
+        assert_eq!(op, OpCode::True);
+        assert_eq!(vm.ip.load(Ordering::Relaxed), 1);
     }
 
     #[test]
     fn read_bytes_updates_ip() {
-        let vm = Vm::new();
         let line = "8.5".to_string();
+        let chunk = compile(&line).unwrap();
+        let expected_offset = chunk.constant_offsets()[0];
 
-        let result = vm.interpret(line);
+        let vm = Vm::new();
+        // SeqCst for the test to ensure that subsequents reads will always see the value.
+        vm.ip.store(1, Ordering::SeqCst);
+        let offset = vm.read_type::<Offset>(&chunk).unwrap();
 
-        assert!(result.is_ok());
-        assert_eq!(
-            vm.ip.load(Ordering::Relaxed),
-            OpCode::Constant as usize + Offset::SIZE + 1
-        );
+        assert_eq!(offset, expected_offset);
+
+        // the + 1 comes from the 1 we stored in the IP before the call
+        assert_eq!(vm.ip.load(Ordering::Acquire), Offset::SIZE + 1);
+    }
+
+    #[test]
+    fn repeat_error_executions() {
+        let vm = Vm::new();
+        let line = "(6 <= (7 == 5))".to_string();
+
+        let result = vm.interpret(line.clone(), true);
+        let Err(VmError::OperatorMismatch {
+            op: _,
+            left_ty: _,
+            right_ty: _,
+        }) = result
+        else {
+            panic!("Unexpected error");
+        };
+
+        let result = vm.interpret(line.clone(), true);
+        let Err(VmError::OperatorMismatch {
+            op: _,
+            left_ty: _,
+            right_ty: _,
+        }) = result
+        else {
+            panic!("Unexpected error");
+        };
+
+        let result = vm.interpret(line, true);
+        let Err(VmError::OperatorMismatch {
+            op: _,
+            left_ty: _,
+            right_ty: _,
+        }) = result
+        else {
+            panic!("Unexpected error");
+        };
     }
 
     #[test]
     fn repeat_executions() {
         let vm = Vm::new();
-        let line = "(6 <= (7 == 5))".to_string();
+        let line = "(8 + 5 <= (5 + 4))".to_string();
 
-        let result = vm.interpret(line.clone());
-        let Err(VmError::OperatorMismatch {
-            op: _,
-            left_ty: _,
-            right_ty: _,
-        }) = result
-        else {
-            panic!("Unexpected error");
-        };
-
-        let result = vm.interpret(line.clone());
-        let Err(VmError::OperatorMismatch {
-            op: _,
-            left_ty: _,
-            right_ty: _,
-        }) = result
-        else {
-            panic!("Unexpected error");
-        };
-
-        let result = vm.interpret(line);
-        let Err(VmError::OperatorMismatch {
-            op: _,
-            left_ty: _,
-            right_ty: _,
-        }) = result
-        else {
-            panic!("Unexpected error");
-        };
+        let result = vm.interpret(line.clone(), true);
+        assert!(result.is_ok());
+        let result = vm.interpret(line.clone(), true);
+        assert!(result.is_ok());
+        let result = vm.interpret(line.clone(), true);
+        assert!(result.is_ok());
     }
 }

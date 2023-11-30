@@ -2,7 +2,7 @@ use std::fmt::Display;
 
 use zerocopy::{AsBytes, FromBytes};
 
-#[derive(FromBytes, AsBytes, Debug, Clone, Copy)]
+#[derive(FromBytes, AsBytes, Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(C)]
 pub struct Offset(pub usize);
 

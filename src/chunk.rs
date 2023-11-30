@@ -28,7 +28,7 @@ pub struct Chunk {
 
 /// An enumeration of all operations supported by our instruction set.
 #[repr(u8)]
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Ord, PartialOrd)]
 pub enum OpCode {
     /// Return from a function.
     Return,
@@ -140,6 +140,31 @@ impl Chunk {
     fn write_bytes(&self, bytes: &[u8], line: usize) {
         self.code.write().unwrap().extend_from_slice(bytes);
         self.lines.add_bytes(line, bytes.len());
+    }
+
+    /// Gets a vec of all offsets present in the chunk, ordered according to insertion order
+    #[cfg(test)]
+    pub fn constant_offsets(&self) -> Vec<Offset> {
+        let mut output = vec![];
+
+        let mut idx = 0;
+        // TODO: pull chunk length out into a field
+        let chunk_len = self.code.read().unwrap().len();
+        while idx < chunk_len {
+            // We have a constant op, pull out the 8 bits and cast to usize
+            // we also have to ensure that the offset which is at idx + 1 exists within the bounds
+            // of the chunk
+            let end = idx + 1 + Offset::SIZE;
+            if self.code.read().unwrap()[idx] == OpCode::Constant as u8 && end <= chunk_len {
+                let vec = self.code.read().unwrap();
+                let offset = Offset::read_from(&vec[idx + 1..end]).unwrap();
+                output.push(offset);
+                idx += Offset::SIZE
+            }
+            idx += 1
+        }
+
+        output
     }
 }
 

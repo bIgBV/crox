@@ -466,14 +466,15 @@ mod test {
         let source = "7003.8008";
         let result = compile(source);
         assert!(result.is_ok());
+        let result = result.unwrap();
 
+        let offset = result.constant_offsets()[0];
         // The the offset of the constant is also inserted into the chunk. In this case
         // it's 0usize which would take up 8 bytes
         let mut expected = vec![OpCode::Constant as u8];
-        expected.extend_from_slice(&bytemuck::cast::<usize, [u8; 8]>(0));
+        expected.extend_from_slice(&bytemuck::cast::<usize, [u8; 8]>(offset.0));
         expected.push(OpCode::Return as u8);
 
-        let result = result.unwrap();
         assert_eq!(&(*result.code.read().unwrap()), &expected);
     }
 
@@ -482,13 +483,15 @@ mod test {
         let source = "-78";
         let result = compile(source);
         assert!(result.is_ok());
+        let chunk = result.unwrap();
+        let offset = chunk.constant_offsets()[0];
+
         let mut expected = vec![];
         expected.push(OpCode::Constant as u8);
-        expected.extend_from_slice(&bytemuck::cast::<usize, [u8; 8]>(0));
+        expected.extend_from_slice(&bytemuck::cast::<usize, [u8; 8]>(offset.0));
         expected.push(OpCode::Negate as u8);
         expected.push(OpCode::Return as u8);
-
-        assert_eq!((*result.unwrap().code.read().unwrap()), expected);
+        assert_eq!((*chunk.code.read().unwrap()), expected);
 
         let source = "!true";
 

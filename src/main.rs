@@ -45,7 +45,7 @@ fn main() -> Result<()> {
 
     if let Some(stream) = options.stream {
         let vm = Vm::new();
-        vm.interpret(stream)?;
+        vm.interpret(stream, false)?;
     } else {
         Repl::start()?;
     }

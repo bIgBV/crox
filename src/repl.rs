@@ -42,7 +42,7 @@ impl Repl {
                     continue;
                 }
                 rl.add_history_entry(line.as_str())?;
-                match vm.interpret(line) {
+                match vm.interpret(line, false) {
                     Ok(_) => (),
                     Err(e) => println!("{}", e),
                 }
