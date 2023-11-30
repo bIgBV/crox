@@ -75,10 +75,7 @@ impl<'source> Parser<'source> {
             self.advance()?;
             Ok(())
         } else {
-            Err(CompilerError::UnexpectedToken(
-                self.current.kind.clone(),
-                kind,
-            ))
+            Err(CompilerError::UnexpectedToken(self.current.kind, kind))
         }
     }
 
@@ -147,7 +144,7 @@ fn number<'compile, 'source>(
     let range = parser.previous.start..parser.previous.start + parser.previous.length;
     let value = &source[range]
         .parse::<f64>()
-        .map_err(|err| Serialization::Number(err))?;
+        .map_err(Serialization::Number)?;
 
     trace!(number=%(*value), "parsed number");
     chunk.write_constant(*value, parser.previous.line)?;

@@ -38,7 +38,7 @@ impl Values {
     pub fn take(&self, idx: Offset) -> Result<Value<'_>, ValueError> {
         self.storage
             .take(idx.0)
-            .map(|val| Value::Owned(val))
+            .map(Value::Owned)
             .ok_or(ValueError::NotFound(idx))
     }
 
@@ -47,7 +47,7 @@ impl Values {
         // make a copy of the value in the store. Could probably optimized
         self.storage
             .get(idx.0)
-            .map(|val| Value::Entry(val))
+            .map(Value::Entry)
             .ok_or(ValueError::NotFound(idx))
     }
 }
@@ -120,8 +120,8 @@ impl Neg for Value<'_> {
 impl<'a> Value<'a> {
     pub fn as_ref(&self) -> &ValueKind {
         match self {
-            Value::Owned(val) => &val,
-            Value::Entry(en) => &en,
+            Value::Owned(val) => val,
+            Value::Entry(en) => en,
         }
     }
 
@@ -184,10 +184,7 @@ impl<'a> Value<'a> {
 
 impl ValueKind {
     pub fn is_number(&self) -> bool {
-        match self {
-            ValueKind::Number(_) => true,
-            _ => false,
-        }
+        matches!(self, ValueKind::Number(_))
     }
 
     pub fn is_string(&self) -> bool {
@@ -229,10 +226,10 @@ pub enum ValueType {
 impl Display for ValueType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ValueType::Bool => write!(f, "{}", "bool"),
-            ValueType::Nil => write!(f, "{}", "nil"),
-            ValueType::Num => write!(f, "{}", "num"),
-            ValueType::Obj => write!(f, "{}", "obj"),
+            ValueType::Bool => write!(f, "bool"),
+            ValueType::Nil => write!(f, "nil"),
+            ValueType::Num => write!(f, "num"),
+            ValueType::Obj => write!(f, "obj"),
         }
     }
 }
@@ -264,10 +261,7 @@ pub struct Object {
 
 impl Object {
     fn is_string(&self) -> bool {
-        match self.kind {
-            ObjectKind::String(_) => true,
-            //_ => false,
-        }
+        matches!(self.kind, ObjectKind::String(_))
     }
 }
 

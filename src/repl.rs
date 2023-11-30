@@ -31,14 +31,14 @@ impl Repl {
         let mut rl = Editor::with_config(config)?;
         rl.set_helper(Some(h));
 
-        let mut vm = Vm::new();
+        let vm = Vm::new();
 
         loop {
-            let p = format!(">> ");
+            let p = ">> ".to_string();
             rl.helper_mut().expect("No helper").colored_prompt = format!("\x1b[1;32m{p}\x1b[0m");
             let readline = rl.readline(&p);
             if let Ok(line) = readline {
-                if line.len() == 0 {
+                if line.is_empty() {
                     continue;
                 }
                 rl.add_history_entry(line.as_str())?;
